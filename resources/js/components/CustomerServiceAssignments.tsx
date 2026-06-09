@@ -67,7 +67,7 @@ export default function CustomerServiceAssignments({
     };
 
     return (
-        <div className="mt-3 rounded-lg border bg-muted/30 p-3">
+        <div className="rounded-lg border bg-muted/30 p-3">
             <p className="mb-2 text-sm font-medium">Zugewiesene Services</p>
 
             {services.length === 0 ? (
