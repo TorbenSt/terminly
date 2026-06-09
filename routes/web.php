@@ -29,4 +29,12 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')
     Route::post('/companies', [\App\Http\Controllers\Admin\CompanyController::class, 'store'])->name('companies.store');
 });
 
+Route::prefix('p')->name('public.')->group(function () {
+    Route::get('/proposals/{token}', [\App\Http\Controllers\Public\ProposalResponseController::class, 'show'])->name('proposals.show');
+    Route::post('/proposals/{token}/accept', [\App\Http\Controllers\Public\ProposalResponseController::class, 'accept'])->name('proposals.accept');
+    Route::post('/proposals/{token}/reject', [\App\Http\Controllers\Public\ProposalResponseController::class, 'reject'])->name('proposals.reject');
+    Route::get('/negotiations/{token}', [\App\Http\Controllers\Public\NegotiationController::class, 'show'])->name('negotiations.show');
+    Route::post('/negotiations/{token}', [\App\Http\Controllers\Public\NegotiationController::class, 'store'])->name('negotiations.store');
+});
+
 require __DIR__.'/auth.php';
