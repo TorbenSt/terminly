@@ -49,6 +49,8 @@ export interface StaffAvailability {
     day_of_week: number;
     start_time: string;
     end_time: string;
+    break_start_time?: string | null;
+    break_end_time?: string | null;
 }
 
 export interface AppointmentListItem {

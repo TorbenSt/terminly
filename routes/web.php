@@ -27,6 +27,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/staff', [\App\Http\Controllers\StaffMemberController::class, 'index'])->name('staff.index');
     Route::post('/staff', [\App\Http\Controllers\StaffMemberController::class, 'store'])->name('staff.store');
     Route::patch('/staff/{staffMember}/availability', [\App\Http\Controllers\StaffMemberController::class, 'updateAvailability'])->name('staff.availability');
+    Route::get('/working-hours', [\App\Http\Controllers\StaffWorkingHoursController::class, 'index'])->name('working-hours.index');
+    Route::patch('/working-hours', [\App\Http\Controllers\StaffWorkingHoursController::class, 'update'])->name('working-hours.update');
     Route::get('/appointments', [\App\Http\Controllers\AppointmentController::class, 'index'])->name('appointments.index');
     Route::post('/appointments/schedule', [\App\Http\Controllers\AppointmentController::class, 'triggerScheduling'])->name('appointments.schedule');
     Route::get('/my-calendar', \App\Http\Controllers\StaffCalendarController::class)->name('staff.calendar');

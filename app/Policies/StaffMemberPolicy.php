@@ -9,7 +9,7 @@ class StaffMemberPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isCompanyAdmin() || $user->isStaff();
+        return $user->isCompanyAdmin();
     }
 
     public function view(User $user, StaffMember $staffMember): bool

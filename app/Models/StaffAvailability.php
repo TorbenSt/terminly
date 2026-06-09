@@ -17,6 +17,8 @@ class StaffAvailability extends Model
         'day_of_week',
         'start_time',
         'end_time',
+        'break_start_time',
+        'break_end_time',
     ];
 
     public function staffMember(): BelongsTo

@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatDateDe } from '@/lib/datetime';
 import { CustomerRecurringService, ServiceType } from '@/types/models';
 import { router, useForm } from '@inertiajs/react';
 import { FormEvent, useState } from 'react';
@@ -126,7 +127,7 @@ export default function CustomerServiceAssignments({
                                             <Badge variant="secondary">Inaktiv</Badge>
                                         )}
                                         <span className="text-muted-foreground">
-                                            Fällig: {new Date(service.next_due_at).toLocaleDateString('de-DE')}
+                                            Fällig: {formatDateDe(service.next_due_at)}
                                         </span>
                                     </div>
                                     {canAssign && (
