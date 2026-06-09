@@ -18,7 +18,9 @@ Multi-Tenant SaaS für Wartungs- und Terminplanung mit Routenoptimierung (PLZ-Cl
 
 ```bash
 # Infrastruktur starten (PostgreSQL + Redis)
-docker compose up -d
+# V1 (dieses System): docker-compose up -d
+# V2 Plugin:           docker compose up -d
+docker-compose up -d
 
 # Dependencies
 composer install
