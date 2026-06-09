@@ -2,50 +2,40 @@
 
 namespace App\Models;
 
-use Database\Factories\CompanyFactory;
+use App\Traits\BelongsToCompany;
+use Database\Factories\ServiceTypeFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Company extends Model
+class ServiceType extends Model
 {
-    /** @use HasFactory<CompanyFactory> */
-    use HasFactory;
+    /** @use HasFactory<ServiceTypeFactory> */
+    use BelongsToCompany, HasFactory;
 
     protected $fillable = [
+        'company_id',
         'name',
-        'slug',
-        'email',
-        'phone',
-        'timezone',
+        'duration_minutes',
+        'is_recurring',
+        'interval_days',
+        'interval_months',
+        'description',
         'is_active',
     ];
 
     protected function casts(): array
     {
         return [
+            'is_recurring' => 'boolean',
             'is_active' => 'boolean',
         ];
     }
 
-    public function users(): HasMany
+    public function staffMembers(): BelongsToMany
     {
-        return $this->hasMany(User::class);
-    }
-
-    public function customers(): HasMany
-    {
-        return $this->hasMany(Customer::class);
-    }
-
-    public function serviceTypes(): HasMany
-    {
-        return $this->hasMany(ServiceType::class);
-    }
-
-    public function staffMembers(): HasMany
-    {
-        return $this->hasMany(StaffMember::class);
+        return $this->belongsToMany(StaffMember::class, 'staff_service_type');
     }
 
     public function recurringServices(): HasMany
