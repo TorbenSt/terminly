@@ -2,50 +2,38 @@
 
 namespace App\Models;
 
-use Database\Factories\CompanyFactory;
+use App\Traits\BelongsToCompany;
+use Database\Factories\CustomerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Company extends Model
+class Customer extends Model
 {
-    /** @use HasFactory<CompanyFactory> */
-    use HasFactory;
+    /** @use HasFactory<CustomerFactory> */
+    use BelongsToCompany, HasFactory;
 
     protected $fillable = [
+        'company_id',
         'name',
-        'slug',
         'email',
         'phone',
-        'timezone',
+        'address',
+        'postal_code',
+        'city',
+        'latitude',
+        'longitude',
+        'notes',
         'is_active',
     ];
 
     protected function casts(): array
     {
         return [
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'is_active' => 'boolean',
         ];
-    }
-
-    public function users(): HasMany
-    {
-        return $this->hasMany(User::class);
-    }
-
-    public function customers(): HasMany
-    {
-        return $this->hasMany(Customer::class);
-    }
-
-    public function serviceTypes(): HasMany
-    {
-        return $this->hasMany(ServiceType::class);
-    }
-
-    public function staffMembers(): HasMany
-    {
-        return $this->hasMany(StaffMember::class);
     }
 
     public function recurringServices(): HasMany
@@ -56,5 +44,10 @@ class Company extends Model
     public function appointments(): HasMany
     {
         return $this->hasMany(Appointment::class);
+    }
+
+    public function postalRegion(): string
+    {
+        return substr($this->postal_code, 0, 3);
     }
 }
