@@ -55,4 +55,18 @@ class ServiceTypeController extends Controller
 
         return back()->with('success', 'Service aktualisiert.');
     }
+
+    public function destroy(ServiceType $serviceType): RedirectResponse
+    {
+        $this->authorize('delete', $serviceType);
+
+        if ($serviceType->recurringServices()->exists() || $serviceType->appointments()->exists()) {
+            return back()->with('error', 'Serviceart wird noch verwendet und kann nicht gelöscht werden.');
+        }
+
+        $serviceType->staffMembers()->detach();
+        $serviceType->delete();
+
+        return back()->with('success', 'Serviceart gelöscht.');
+    }
 }

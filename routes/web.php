@@ -20,7 +20,7 @@ Route::get('/dashboard', \App\Http\Controllers\DashboardController::class)
 
 Route::middleware(['auth', 'company'])->group(function () {
     Route::resource('customers', \App\Http\Controllers\CustomerController::class)->only(['index', 'store', 'update', 'destroy']);
-    Route::resource('service-types', \App\Http\Controllers\ServiceTypeController::class)->only(['index', 'store', 'update']);
+    Route::resource('service-types', \App\Http\Controllers\ServiceTypeController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::get('/staff', [\App\Http\Controllers\StaffMemberController::class, 'index'])->name('staff.index');
     Route::post('/staff', [\App\Http\Controllers\StaffMemberController::class, 'store'])->name('staff.store');
     Route::patch('/staff/{staffMember}/availability', [\App\Http\Controllers\StaffMemberController::class, 'updateAvailability'])->name('staff.availability');
