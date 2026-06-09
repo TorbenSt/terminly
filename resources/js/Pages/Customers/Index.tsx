@@ -9,8 +9,8 @@ import CustomerServiceAssignments from '@/components/CustomerServiceAssignments'
 import { cn } from '@/lib/utils';
 import { Customer, ServiceType } from '@/types/models';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronDown } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { ChevronDown, Search, X } from 'lucide-react';
+import { FormEvent, useMemo, useState } from 'react';
 
 interface Paginated<T> {
     data: T[];
@@ -134,6 +134,49 @@ export default function Index({ customers, serviceTypes }: Props) {
     const canAssignServices = canManage || roles.includes('staff');
     const [editingId, setEditingId] = useState<number | null>(null);
     const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null);
+    const [nameSearch, setNameSearch] = useState('');
+    const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
+    const [filterWithoutServices, setFilterWithoutServices] = useState(false);
+
+    const hasActiveFilters =
+        nameSearch.trim().length > 0 || selectedServiceTypeIds.length > 0 || filterWithoutServices;
+
+    const filteredCustomers = useMemo(() => {
+        const query = nameSearch.trim().toLowerCase();
+        const hasServiceFilter = selectedServiceTypeIds.length > 0 || filterWithoutServices;
+
+        return customers.data.filter((customer) => {
+            if (query && !customer.name.toLowerCase().includes(query)) {
+                return false;
+            }
+
+            if (!hasServiceFilter) {
+                return true;
+            }
+
+            const assignedTypeIds = new Set(
+                (customer.recurring_services ?? []).map((service) => service.service_type_id),
+            );
+            const matchesServiceType = selectedServiceTypeIds.some((id) => assignedTypeIds.has(id));
+            const matchesWithoutServices = filterWithoutServices && assignedTypeIds.size === 0;
+
+            return matchesServiceType || matchesWithoutServices;
+        });
+    }, [customers.data, nameSearch, selectedServiceTypeIds, filterWithoutServices]);
+
+    const toggleServiceFilter = (serviceTypeId: number) => {
+        setSelectedServiceTypeIds((current) =>
+            current.includes(serviceTypeId)
+                ? current.filter((id) => id !== serviceTypeId)
+                : [...current, serviceTypeId],
+        );
+    };
+
+    const clearFilters = () => {
+        setNameSearch('');
+        setSelectedServiceTypeIds([]);
+        setFilterWithoutServices(false);
+    };
 
     const createForm = useForm<CustomerFormData>({
         name: '',
@@ -229,11 +272,82 @@ export default function Index({ customers, serviceTypes }: Props) {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Kundenliste ({customers.data.length})</CardTitle>
+                        <CardTitle>
+                            Kundenliste (
+                            {hasActiveFilters
+                                ? `${filteredCustomers.length} von ${customers.data.length}`
+                                : customers.data.length}
+                            )
+                        </CardTitle>
                     </CardHeader>
                     <CardContent>
+                        <div className="mb-6 space-y-4">
+                            <div>
+                                <Label htmlFor="customer-search">Suche nach Name</Label>
+                                <div className="relative mt-1">
+                                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="customer-search"
+                                        type="search"
+                                        placeholder="Kundennamen eingeben…"
+                                        value={nameSearch}
+                                        onChange={(e) => setNameSearch(e.target.value)}
+                                        className="pl-9"
+                                    />
+                                </div>
+                            </div>
+
+                            {(serviceTypes.length > 0 || customers.data.some((c) => !c.recurring_services?.length)) && (
+                                <div>
+                                    <p className="mb-2 text-sm font-medium">Nach Service filtern</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {serviceTypes.map((type) => {
+                                            const isSelected = selectedServiceTypeIds.includes(type.id);
+
+                                            return (
+                                                <button
+                                                    key={type.id}
+                                                    type="button"
+                                                    onClick={() => toggleServiceFilter(type.id)}
+                                                    aria-pressed={isSelected}
+                                                    className={cn(
+                                                        'inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors',
+                                                        isSelected
+                                                            ? 'border-primary bg-primary text-primary-foreground'
+                                                            : 'border-input bg-background hover:bg-muted',
+                                                    )}
+                                                >
+                                                    {type.name}
+                                                </button>
+                                            );
+                                        })}
+                                        <button
+                                            type="button"
+                                            onClick={() => setFilterWithoutServices((current) => !current)}
+                                            aria-pressed={filterWithoutServices}
+                                            className={cn(
+                                                'inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors',
+                                                filterWithoutServices
+                                                    ? 'border-primary bg-primary text-primary-foreground'
+                                                    : 'border-input bg-background hover:bg-muted',
+                                            )}
+                                        >
+                                            Ohne Services
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasActiveFilters && (
+                                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                                    <X className="mr-1 h-4 w-4" />
+                                    Filter zurücksetzen
+                                </Button>
+                            )}
+                        </div>
+
                         <ul className="space-y-2">
-                            {customers.data.map((customer) => {
+                            {filteredCustomers.map((customer) => {
                                 const isExpanded = expandedCustomerId === customer.id;
 
                                 return (
@@ -392,6 +506,11 @@ export default function Index({ customers, serviceTypes }: Props) {
                             })}
                             {customers.data.length === 0 && (
                                 <p className="py-3 text-sm text-muted-foreground">Noch keine Kunden.</p>
+                            )}
+                            {customers.data.length > 0 && filteredCustomers.length === 0 && (
+                                <p className="py-3 text-sm text-muted-foreground">
+                                    Keine Kunden entsprechen Ihrer Suche oder den gewählten Filtern.
+                                </p>
                             )}
                         </ul>
                     </CardContent>
