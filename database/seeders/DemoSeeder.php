@@ -134,27 +134,42 @@ class DemoSeeder extends Seeder
             ]));
         }
 
-        $serviceTypes = collect([$weekly, $monthly, $once]);
-
-        $customers->each(function (Customer $customer, int $index) use ($company, $serviceTypes) {
-            $type = $serviceTypes[$index % $serviceTypes->count()];
-
-            if (! $type->is_recurring) {
-                return;
+        foreach ($customers as $index => $customer) {
+            // Letzte 2 Kunden ohne Services – zum Testen der Zuweisung im UI
+            if ($index >= $customerCount - 2) {
+                continue;
             }
 
-            RecurringService::firstOrCreate(
-                [
-                    'company_id' => $company->id,
-                    'customer_id' => $customer->id,
-                    'service_type_id' => $type->id,
+            match ($index % 5) {
+                0 => $this->assignService($company, $customer, $weekly, dueNow: true),
+                1 => $this->assignService($company, $customer, $monthly, dueNow: true),
+                2 => [
+                    $this->assignService($company, $customer, $weekly, dueNow: true),
+                    $this->assignService($company, $customer, $once, dueNow: true),
                 ],
-                [
-                    'last_completed_at' => now()->subDays($type->interval_days ?? 30),
-                    'next_due_at' => now()->subDays(random_int(0, 3)),
-                    'is_active' => true,
-                ]
-            );
-        });
+                3 => $this->assignService($company, $customer, $once, dueNow: false),
+                4 => $this->assignService($company, $customer, $monthly, dueNow: false),
+            };
+        }
+    }
+
+    private function assignService(Company $company, Customer $customer, ServiceType $type, bool $dueNow): void
+    {
+        RecurringService::firstOrCreate(
+            [
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'service_type_id' => $type->id,
+            ],
+            [
+                'last_completed_at' => $dueNow
+                    ? now()->subDays($type->interval_days ?? ($type->interval_months ? 30 : 14))
+                    : null,
+                'next_due_at' => $dueNow
+                    ? now()->subDays(random_int(0, 2))
+                    : now()->addDays(random_int(5, 14)),
+                'is_active' => true,
+            ]
+        );
     }
 }

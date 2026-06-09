@@ -1,3 +1,14 @@
+export interface CustomerRecurringService {
+    id: number;
+    service_type_id: number;
+    service_name: string;
+    is_recurring: boolean;
+    duration_minutes: number;
+    next_due_at: string;
+    is_active: boolean;
+    is_due: boolean;
+}
+
 export interface Customer {
     id: number;
     name: string;
@@ -8,6 +19,7 @@ export interface Customer {
     city: string;
     notes: string | null;
     is_active: boolean;
+    recurring_services?: CustomerRecurringService[];
 }
 
 export interface ServiceType {

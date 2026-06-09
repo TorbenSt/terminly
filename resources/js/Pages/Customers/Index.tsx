@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Customer } from '@/types/models';
+import CustomerServiceAssignments from '@/components/CustomerServiceAssignments';
+import { Customer, ServiceType } from '@/types/models';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useState } from 'react';
 
@@ -15,6 +16,7 @@ interface Paginated<T> {
 
 interface Props {
     customers: Paginated<Customer>;
+    serviceTypes: Pick<ServiceType, 'id' | 'name' | 'duration_minutes' | 'is_recurring'>[];
 }
 
 type CustomerFormData = {
@@ -120,12 +122,14 @@ function CustomerFormFields({
     );
 }
 
-export default function Index({ customers }: Props) {
+export default function Index({ customers, serviceTypes }: Props) {
     const { auth, flash } = usePage().props as {
         auth: { user: { roles: string[] } | null };
         flash?: { success?: string; error?: string };
     };
-    const canManage = auth.user?.roles.includes('company_admin') ?? false;
+    const roles = auth.user?.roles ?? [];
+    const canManage = roles.includes('company_admin');
+    const canAssignServices = canManage || roles.includes('staff');
     const [editingId, setEditingId] = useState<number | null>(null);
 
     const createForm = useForm<CustomerFormData>({
@@ -285,6 +289,14 @@ export default function Index({ customers }: Props) {
                                                 </div>
                                             )}
                                         </div>
+                                    )}
+                                    {editingId !== customer.id && (
+                                        <CustomerServiceAssignments
+                                            customerId={customer.id}
+                                            services={customer.recurring_services ?? []}
+                                            serviceTypes={serviceTypes}
+                                            canAssign={canAssignServices}
+                                        />
                                     )}
                                 </li>
                             ))}
