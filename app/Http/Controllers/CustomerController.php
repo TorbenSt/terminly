@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\ServiceType;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -15,7 +16,35 @@ class CustomerController extends Controller
         $this->authorize('viewAny', Customer::class);
 
         return Inertia::render('Customers/Index', [
-            'customers' => Customer::query()->orderBy('name')->paginate(15),
+            'customers' => Customer::query()
+                ->with(['recurringServices.serviceType'])
+                ->orderBy('name')
+                ->paginate(15)
+                ->through(fn (Customer $customer) => [
+                    'id' => $customer->id,
+                    'name' => $customer->name,
+                    'email' => $customer->email,
+                    'phone' => $customer->phone,
+                    'address' => $customer->address,
+                    'postal_code' => $customer->postal_code,
+                    'city' => $customer->city,
+                    'notes' => $customer->notes,
+                    'is_active' => $customer->is_active,
+                    'recurring_services' => $customer->recurringServices->map(fn ($rs) => [
+                        'id' => $rs->id,
+                        'service_type_id' => $rs->service_type_id,
+                        'service_name' => $rs->serviceType->name,
+                        'is_recurring' => $rs->serviceType->is_recurring,
+                        'duration_minutes' => $rs->serviceType->duration_minutes,
+                        'next_due_at' => $rs->next_due_at->toDateString(),
+                        'is_active' => $rs->is_active,
+                        'is_due' => $rs->next_due_at->lte(now()),
+                    ]),
+                ]),
+            'serviceTypes' => ServiceType::query()
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'duration_minutes', 'is_recurring']),
         ]);
     }
 
