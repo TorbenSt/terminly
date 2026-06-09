@@ -31,12 +31,33 @@ export default function Authenticated({
                             </div>
 
                             <div className="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                                <NavLink
-                                    href={route('dashboard')}
-                                    active={route().current('dashboard')}
-                                >
+                                <NavLink href={route('dashboard')} active={route().current('dashboard')}>
                                     Dashboard
                                 </NavLink>
+                                {user.is_super_admin && (
+                                    <NavLink href={route('admin.companies.index')} active={route().current('admin.companies.*')}>
+                                        Unternehmen
+                                    </NavLink>
+                                )}
+                                {!user.is_super_admin && (
+                                    <>
+                                        <NavLink href={route('customers.index')} active={route().current('customers.*')}>
+                                            Kunden
+                                        </NavLink>
+                                        <NavLink href={route('service-types.index')} active={route().current('service-types.*')}>
+                                            Services
+                                        </NavLink>
+                                        <NavLink href={route('staff.index')} active={route().current('staff.index')}>
+                                            Mitarbeiter
+                                        </NavLink>
+                                        <NavLink href={route('appointments.index')} active={route().current('appointments.*')}>
+                                            Termine
+                                        </NavLink>
+                                        <NavLink href={route('staff.calendar')} active={route().current('staff.calendar')}>
+                                            Kalender
+                                        </NavLink>
+                                    </>
+                                )}
                             </div>
                         </div>
 

@@ -14,9 +14,20 @@ Route::get('/', function () {
     ]);
 });
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', \App\Http\Controllers\DashboardController::class)
+    ->middleware(['auth', 'verified', 'company'])
+    ->name('dashboard');
+
+Route::middleware(['auth', 'company'])->group(function () {
+    Route::resource('customers', \App\Http\Controllers\CustomerController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::resource('service-types', \App\Http\Controllers\ServiceTypeController::class)->only(['index', 'store', 'update']);
+    Route::get('/staff', [\App\Http\Controllers\StaffMemberController::class, 'index'])->name('staff.index');
+    Route::post('/staff', [\App\Http\Controllers\StaffMemberController::class, 'store'])->name('staff.store');
+    Route::patch('/staff/{staffMember}/availability', [\App\Http\Controllers\StaffMemberController::class, 'updateAvailability'])->name('staff.availability');
+    Route::get('/appointments', [\App\Http\Controllers\AppointmentController::class, 'index'])->name('appointments.index');
+    Route::post('/appointments/schedule', [\App\Http\Controllers\AppointmentController::class, 'triggerScheduling'])->name('appointments.schedule');
+    Route::get('/my-calendar', \App\Http\Controllers\StaffCalendarController::class)->name('staff.calendar');
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
