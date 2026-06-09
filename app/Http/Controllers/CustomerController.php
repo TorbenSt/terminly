@@ -61,6 +61,11 @@ class CustomerController extends Controller
     public function destroy(Customer $customer): RedirectResponse
     {
         $this->authorize('delete', $customer);
+
+        if ($customer->recurringServices()->exists() || $customer->appointments()->exists()) {
+            return back()->with('error', 'Kunde hat noch Wartungen oder Termine und kann nicht gelöscht werden.');
+        }
+
         $customer->delete();
 
         return back()->with('success', 'Kunde gelöscht.');
