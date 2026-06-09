@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import CustomerServiceAssignments from '@/components/CustomerServiceAssignments';
+import { cn } from '@/lib/utils';
 import { Customer, ServiceType } from '@/types/models';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { ChevronDown } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 interface Paginated<T> {
@@ -131,6 +133,7 @@ export default function Index({ customers, serviceTypes }: Props) {
     const canManage = roles.includes('company_admin');
     const canAssignServices = canManage || roles.includes('staff');
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null);
 
     const createForm = useForm<CustomerFormData>({
         name: '',
@@ -158,7 +161,12 @@ export default function Index({ customers, serviceTypes }: Props) {
         createForm.post(route('customers.store'), { onSuccess: () => createForm.reset() });
     };
 
+    const toggleCustomer = (customerId: number) => {
+        setExpandedCustomerId((current) => (current === customerId ? null : customerId));
+    };
+
     const startEdit = (customer: Customer) => {
+        setExpandedCustomerId(null);
         editForm.setData({
             name: customer.name,
             email: customer.email ?? '',
@@ -224,10 +232,14 @@ export default function Index({ customers, serviceTypes }: Props) {
                         <CardTitle>Kundenliste ({customers.data.length})</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <ul className="divide-y">
-                            {customers.data.map((customer) => (
-                                <li key={customer.id} className="py-4">
+                        <ul className="space-y-2">
+                            {customers.data.map((customer) => {
+                                const isExpanded = expandedCustomerId === customer.id;
+
+                                return (
+                                <li key={customer.id}>
                                     {editingId === customer.id ? (
+                                        <div className="rounded-lg border border-transparent py-4">
                                         <form onSubmit={submitEdit} className="grid gap-3 md:grid-cols-2">
                                             <CustomerFormFields
                                                 data={editForm.data}
@@ -249,57 +261,135 @@ export default function Index({ customers, serviceTypes }: Props) {
                                                 </Button>
                                             </div>
                                         </form>
+                                        </div>
                                     ) : (
-                                        <div className="flex items-start justify-between gap-4">
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <p className="font-medium">{customer.name}</p>
-                                                    {!customer.is_active && (
-                                                        <Badge variant="secondary">Inaktiv</Badge>
+                                        <div
+                                            className={cn(
+                                                'rounded-lg transition-all duration-300',
+                                                isExpanded
+                                                    ? 'border border-primary/25 bg-primary/5 p-4 shadow-sm ring-1 ring-primary/10'
+                                                    : 'border border-transparent py-4',
+                                            )}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleCustomer(customer.id)}
+                                                    aria-expanded={isExpanded}
+                                                    className={cn(
+                                                        'mt-0.5 shrink-0 rounded-md p-1 transition-colors',
+                                                        isExpanded
+                                                            ? 'text-primary hover:bg-primary/10'
+                                                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                                                     )}
-                                                </div>
-                                                <p className="text-sm text-muted-foreground">
-                                                    {customer.address}, {customer.postal_code} {customer.city}
-                                                </p>
-                                                <p className="text-sm text-muted-foreground">
-                                                    {[customer.email, customer.phone].filter(Boolean).join(' · ')}
-                                                </p>
-                                                {customer.notes && (
-                                                    <p className="mt-1 text-sm text-muted-foreground">{customer.notes}</p>
+                                                >
+                                                    <ChevronDown
+                                                        className={cn(
+                                                            'h-5 w-5 transition-transform duration-300',
+                                                            isExpanded && 'rotate-180',
+                                                        )}
+                                                    />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleCustomer(customer.id)}
+                                                    className={cn(
+                                                        'min-w-0 flex-1 rounded-lg text-left transition-colors',
+                                                        isExpanded ? 'hover:bg-primary/10' : 'hover:bg-muted/40',
+                                                    )}
+                                                >
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="font-medium">{customer.name}</p>
+                                                        {!customer.is_active && (
+                                                            <Badge variant="secondary">Inaktiv</Badge>
+                                                        )}
+                                                        {(customer.recurring_services?.length ?? 0) > 0 ? (
+                                                            <Badge variant="outline">
+                                                                {customer.recurring_services!.length}{' '}
+                                                                {customer.recurring_services!.length === 1
+                                                                    ? 'Service'
+                                                                    : 'Services'}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="secondary">Keine Services</Badge>
+                                                        )}
+                                                        {(customer.recurring_services?.filter(
+                                                            (s) => s.is_due && s.is_active,
+                                                        ).length ?? 0) > 0 && (
+                                                            <Badge>
+                                                                {
+                                                                    customer.recurring_services!.filter(
+                                                                        (s) => s.is_due && s.is_active,
+                                                                    ).length
+                                                                }{' '}
+                                                                fällig
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {customer.address}, {customer.postal_code} {customer.city}
+                                                    </p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {[customer.email, customer.phone]
+                                                            .filter(Boolean)
+                                                            .join(' · ')}
+                                                    </p>
+                                                    {customer.notes && (
+                                                        <p className="mt-1 text-sm text-muted-foreground line-clamp-1">
+                                                            {customer.notes}
+                                                        </p>
+                                                    )}
+                                                </button>
+                                                {canManage && (
+                                                    <div className="flex shrink-0 gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                startEdit(customer);
+                                                            }}
+                                                        >
+                                                            Bearbeiten
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="destructive"
+                                                            size="sm"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                deleteCustomer(customer);
+                                                            }}
+                                                        >
+                                                            Löschen
+                                                        </Button>
+                                                    </div>
                                                 )}
                                             </div>
-                                            {canManage && (
-                                                <div className="flex shrink-0 gap-2">
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => startEdit(customer)}
-                                                    >
-                                                        Bearbeiten
-                                                    </Button>
-                                                    <Button
-                                                        type="button"
-                                                        variant="destructive"
-                                                        size="sm"
-                                                        onClick={() => deleteCustomer(customer)}
-                                                    >
-                                                        Löschen
-                                                    </Button>
+
+                                            <div
+                                                className={cn(
+                                                    'grid transition-all duration-300 ease-in-out',
+                                                    isExpanded
+                                                        ? 'mt-3 grid-rows-[1fr] opacity-100'
+                                                        : 'grid-rows-[0fr] opacity-0',
+                                                )}
+                                            >
+                                                <div className="overflow-hidden">
+                                                    <CustomerServiceAssignments
+                                                        customerId={customer.id}
+                                                        services={customer.recurring_services ?? []}
+                                                        serviceTypes={serviceTypes}
+                                                        canAssign={canAssignServices}
+                                                    />
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
                                     )}
-                                    {editingId !== customer.id && (
-                                        <CustomerServiceAssignments
-                                            customerId={customer.id}
-                                            services={customer.recurring_services ?? []}
-                                            serviceTypes={serviceTypes}
-                                            canAssign={canAssignServices}
-                                        />
-                                    )}
                                 </li>
-                            ))}
+                            );
+                            })}
                             {customers.data.length === 0 && (
                                 <p className="py-3 text-sm text-muted-foreground">Noch keine Kunden.</p>
                             )}
