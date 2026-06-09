@@ -2,6 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatDateTimeDe } from '@/lib/datetime';
 import { Head, router } from '@inertiajs/react';
 
 interface AppointmentRow {
@@ -40,7 +41,7 @@ export default function Index({ appointments }: Props) {
                                     <div>
                                         <p className="font-medium">{a.customer.name} ({a.customer.postal_code})</p>
                                         <p className="text-sm text-muted-foreground">
-                                            {a.service_type.name} · {a.staff_member?.name ?? '—'} · {a.scheduled_at ? new Date(a.scheduled_at).toLocaleString('de-DE') : 'offen'}
+                                            {a.service_type.name} · {a.staff_member?.name ?? '—'} · {a.scheduled_at ? formatDateTimeDe(a.scheduled_at) : 'offen'}
                                         </p>
                                     </div>
                                     <Badge variant="secondary">{a.status}</Badge>

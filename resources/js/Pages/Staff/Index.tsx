@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { compareWeekdaysMondayFirst, DAY_LABELS_SHORT, formatTime24 } from '@/lib/datetime';
 import { ServiceType, StaffMember } from '@/types/models';
 import { Head, useForm } from '@inertiajs/react';
 import { FormEvent } from 'react';
@@ -11,8 +12,6 @@ interface Props {
     staffMembers: StaffMember[];
     serviceTypes: Pick<ServiceType, 'id' | 'name'>[];
 }
-
-const DAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
 export default function Index({ staffMembers, serviceTypes }: Props) {
     const { data, setData, post, processing, reset } = useForm({
@@ -76,10 +75,21 @@ export default function Index({ staffMembers, serviceTypes }: Props) {
                         <CardContent>
                             <p className="mb-2 text-sm font-medium">Wochenverfügbarkeit</p>
                             <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-                                {staff.availabilities?.map((a) => (
+                                {[...(staff.availabilities ?? [])]
+                                    .sort((a, b) => compareWeekdaysMondayFirst(a.day_of_week, b.day_of_week))
+                                    .map((a) => (
                                     <div key={a.id} className="rounded border p-2">
-                                        <span className="font-medium">{DAYS[a.day_of_week]}</span>
-                                        <p>{String(a.start_time).slice(0, 5)} – {String(a.end_time).slice(0, 5)}</p>
+                                        <span className="font-medium">{DAY_LABELS_SHORT[a.day_of_week]}</span>
+                                        <p>
+                                            {formatTime24(String(a.start_time))} – {formatTime24(String(a.end_time))}
+                                            {a.break_start_time && a.break_end_time && (
+                                                <>
+                                                    <br />
+                                                    Pause: {formatTime24(String(a.break_start_time))} –{' '}
+                                                    {formatTime24(String(a.break_end_time))}
+                                                </>
+                                            )}
+                                        </p>
                                     </div>
                                 ))}
                             </div>

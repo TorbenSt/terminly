@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatDateLongDe, formatTime24 } from '@/lib/datetime';
 import { Head, router } from '@inertiajs/react';
 
 interface Props {
@@ -23,7 +24,7 @@ export default function Calendar({ date, staffMember, slots, appointments }: Pro
             <div className="space-y-6 py-8">
                 <div className="flex items-center gap-4">
                     <button type="button" onClick={() => changeDate(-1)} className="rounded border px-3 py-1">←</button>
-                    <span className="font-medium">{staffMember.name} · {date}</span>
+                    <span className="font-medium">{staffMember.name} · {formatDateLongDe(date)}</span>
                     <button type="button" onClick={() => changeDate(1)} className="rounded border px-3 py-1">→</button>
                 </div>
 
@@ -33,7 +34,9 @@ export default function Calendar({ date, staffMember, slots, appointments }: Pro
                         <CardContent>
                             <ul className="space-y-1 text-sm">
                                 {slots.map((s, i) => (
-                                    <li key={i} className="rounded bg-green-50 px-2 py-1">{s.start} – {s.end}</li>
+                                    <li key={i} className="rounded bg-green-50 px-2 py-1">
+                                        {formatTime24(s.start)} – {formatTime24(s.end)}
+                                    </li>
                                 ))}
                                 {slots.length === 0 && <p className="text-muted-foreground">Keine freien Slots.</p>}
                             </ul>
@@ -47,7 +50,9 @@ export default function Calendar({ date, staffMember, slots, appointments }: Pro
                                 {appointments.map((a) => (
                                     <li key={a.id} className="flex items-center justify-between rounded border p-2">
                                         <div>
-                                            <p className="font-medium">{a.time} – {a.customer}</p>
+                                            <p className="font-medium">
+                                                {a.time ? formatTime24(a.time) : '—'} – {a.customer}
+                                            </p>
                                             <p className="text-sm text-muted-foreground">{a.service}</p>
                                         </div>
                                         <Badge>{a.status}</Badge>

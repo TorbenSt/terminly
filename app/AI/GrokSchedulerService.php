@@ -86,11 +86,17 @@ class GrokSchedulerService
                     'staff_id' => $staff->id,
                     'qualified_service_type_ids' => $staff->serviceTypes->pluck('id')->values(),
                     'buffer_min' => $staff->buffer_minutes,
-                    'weekly_availability' => $staff->availabilities->map(fn ($a) => [
+                    'weekly_availability' => $staff->availabilities->map(fn ($a) => array_filter([
                         'dow' => $a->day_of_week,
                         'start' => substr((string) $a->start_time, 0, 5),
                         'end' => substr((string) $a->end_time, 0, 5),
-                    ])->values(),
+                        'break_start' => $a->break_start_time
+                            ? substr((string) $a->break_start_time, 0, 5)
+                            : null,
+                        'break_end' => $a->break_end_time
+                            ? substr((string) $a->break_end_time, 0, 5)
+                            : null,
+                    ], fn ($value) => $value !== null))->values(),
                     'available_slots' => $this->availabilityService
                         ->exportSlotsForAi($staff, $from, $to, 60)
                         ->take(20)

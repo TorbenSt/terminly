@@ -71,10 +71,30 @@ class AvailabilityService
             return collect();
         }
 
-        return collect([[
-            'start' => $date->copy()->setTimeFromTimeString($availability->start_time),
-            'end' => $date->copy()->setTimeFromTimeString($availability->end_time),
-        ]]);
+        return $this->windowsFromAvailability($date, $availability);
+    }
+
+    /**
+     * @return Collection<int, array{start: Carbon, end: Carbon}>
+     */
+    private function windowsFromAvailability(Carbon $date, $availability): Collection
+    {
+        $start = $date->copy()->setTimeFromTimeString($availability->start_time);
+        $end = $date->copy()->setTimeFromTimeString($availability->end_time);
+
+        if ($availability->break_start_time && $availability->break_end_time) {
+            $breakStart = $date->copy()->setTimeFromTimeString($availability->break_start_time);
+            $breakEnd = $date->copy()->setTimeFromTimeString($availability->break_end_time);
+
+            if ($breakStart->gt($start) && $breakEnd->lt($end) && $breakEnd->gt($breakStart)) {
+                return collect([
+                    ['start' => $start, 'end' => $breakStart],
+                    ['start' => $breakEnd, 'end' => $end],
+                ]);
+            }
+        }
+
+        return collect([['start' => $start, 'end' => $end]]);
     }
 
     /**

@@ -18,6 +18,10 @@ export default function Authenticated({
         return null;
     }
 
+    const roles = (user.roles as string[] | undefined) ?? [];
+    const isCompanyAdmin = roles.includes('company_admin');
+    const isStaffMember = roles.includes('staff');
+
     return (
         <div className="min-h-screen bg-gray-100">
             <nav className="border-b border-gray-100 bg-white">
@@ -47,9 +51,19 @@ export default function Authenticated({
                                         <NavLink href={route('service-types.index')} active={route().current('service-types.*')}>
                                             Services
                                         </NavLink>
-                                        <NavLink href={route('staff.index')} active={route().current('staff.index')}>
-                                            Mitarbeiter
-                                        </NavLink>
+                                        {isCompanyAdmin && (
+                                            <NavLink href={route('staff.index')} active={route().current('staff.*')}>
+                                                Mitarbeiter
+                                            </NavLink>
+                                        )}
+                                        {isStaffMember && !isCompanyAdmin && (
+                                            <NavLink
+                                                href={route('working-hours.index')}
+                                                active={route().current('working-hours.*')}
+                                            >
+                                                Arbeitszeiten
+                                            </NavLink>
+                                        )}
                                         <NavLink href={route('appointments.index')} active={route().current('appointments.*')}>
                                             Termine
                                         </NavLink>
