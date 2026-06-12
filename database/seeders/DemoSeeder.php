@@ -37,6 +37,8 @@ class DemoSeeder extends Seeder
             ]
         );
 
+        Company::where('slug', 'sued-service')->update(['billing_exempt' => true]);
+
         $sued = Company::where('slug', 'sued-service')->first();
         if ($sued && $sued->customers()->count() === 0) {
             $this->seedCompany($sued, 8);

@@ -6,7 +6,6 @@ use App\Models\Company;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class SuperAdminSeeder extends Seeder
 {
@@ -45,5 +44,9 @@ class SuperAdminSeeder extends Seeder
                 'is_active' => true,
             ]
         );
+
+        // Demo-Firmen sind dauerhaft von der Abrechnung befreit (Entwickler-/UI-Zugänge).
+        Company::whereIn('slug', ['demo-wartung', 'tech-service-nord'])
+            ->update(['billing_exempt' => true]);
     }
 }

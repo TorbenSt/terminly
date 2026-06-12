@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import BillingOverageWarning from '@/components/BillingOverageWarning';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,6 +45,7 @@ export default function Index({ staffMembers, serviceTypes }: Props) {
                     <CardHeader><CardTitle>Neuer Mitarbeiter</CardTitle></CardHeader>
                     <CardContent>
                         <form onSubmit={submit} className="space-y-3">
+                            <BillingOverageWarning type="staff" />
                             <div className="grid gap-3 md:grid-cols-2">
                                 <div><Label>Name</Label><Input value={data.name} onChange={(e) => setData('name', e.target.value)} required /></div>
                                 <div><Label>E-Mail</Label><Input value={data.email} onChange={(e) => setData('email', e.target.value)} /></div>

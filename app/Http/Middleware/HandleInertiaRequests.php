@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Billing\PlanLimitService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -35,6 +36,33 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            'billing' => fn () => $this->billingStatus($request),
+        ];
+    }
+
+    protected function billingStatus(Request $request): ?array
+    {
+        $user = $request->user();
+
+        if (! $user || $user->isSuperAdmin() || ! $user->company_id) {
+            return null;
+        }
+
+        $company = $user->company;
+
+        if (! $company) {
+            return null;
+        }
+
+        $limits = app(PlanLimitService::class);
+
+        return [
+            'exempt' => $company->billing_exempt,
+            'on_trial' => $company->onGenericTrial(),
+            'trial_ends_at' => $company->trial_ends_at?->toDateString(),
+            'subscribed' => $company->hasActiveSubscription(),
+            'read_only' => ! $company->hasFullAccess(),
+            'usage' => $company->billing_exempt ? null : $limits->summary($company),
         ];
     }
 }
