@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import BillingOverageWarning from '@/components/BillingOverageWarning';
 import CustomerServiceAssignments from '@/components/CustomerServiceAssignments';
 import { cn } from '@/lib/utils';
 import { Customer, ServiceType } from '@/types/models';
@@ -254,6 +255,9 @@ export default function Index({ customers, serviceTypes }: Props) {
                         </CardHeader>
                         <CardContent>
                             <form onSubmit={submitCreate} className="grid gap-3 md:grid-cols-2">
+                                <div className="md:col-span-2">
+                                    <BillingOverageWarning type="customers" />
+                                </div>
                                 <CustomerFormFields
                                     data={createForm.data}
                                     setData={createForm.setData}

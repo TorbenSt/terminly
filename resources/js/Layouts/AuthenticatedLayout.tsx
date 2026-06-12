@@ -2,6 +2,7 @@ import ApplicationLogo from '@/Components/ApplicationLogo';
 import Dropdown from '@/Components/Dropdown';
 import NavLink from '@/Components/NavLink';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink';
+import { BillingStatus } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
 import { PropsWithChildren, ReactNode, useState } from 'react';
 
@@ -9,7 +10,9 @@ export default function Authenticated({
     header,
     children,
 }: PropsWithChildren<{ header?: ReactNode }>) {
-    const user = usePage().props.auth.user;
+    const pageProps = usePage().props;
+    const user = pageProps.auth.user;
+    const billing = pageProps.billing as BillingStatus | null | undefined;
 
     const [showingNavigationDropdown, setShowingNavigationDropdown] =
         useState(false);
@@ -39,9 +42,17 @@ export default function Authenticated({
                                     Dashboard
                                 </NavLink>
                                 {user.is_super_admin && (
-                                    <NavLink href={route('admin.companies.index')} active={route().current('admin.companies.*')}>
-                                        Unternehmen
-                                    </NavLink>
+                                    <>
+                                        <NavLink href={route('admin.companies.index')} active={route().current('admin.companies.*')}>
+                                            Unternehmen
+                                        </NavLink>
+                                        <NavLink href={route('admin.plans.index')} active={route().current('admin.plans.*')}>
+                                            Abos
+                                        </NavLink>
+                                        <NavLink href={route('admin.coupons.index')} active={route().current('admin.coupons.*')}>
+                                            Gutscheine
+                                        </NavLink>
+                                    </>
                                 )}
                                 {!user.is_super_admin && (
                                     <>
@@ -70,6 +81,11 @@ export default function Authenticated({
                                         <NavLink href={route('staff.calendar')} active={route().current('staff.calendar')}>
                                             Kalender
                                         </NavLink>
+                                        {isCompanyAdmin && (
+                                            <NavLink href={route('billing.index')} active={route().current('billing.*')}>
+                                                Abo
+                                            </NavLink>
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -203,6 +219,30 @@ export default function Authenticated({
                     </div>
                 </div>
             </nav>
+
+            {billing?.read_only && (
+                <div className="bg-red-600 px-4 py-2 text-center text-sm text-white">
+                    Kein aktives Abo – Daten können nur gelesen werden.{' '}
+                    {isCompanyAdmin ? (
+                        <Link href={route('billing.index')} className="font-semibold underline">
+                            Jetzt Abo abschließen
+                        </Link>
+                    ) : (
+                        'Bitte wenden Sie sich an Ihren Administrator.'
+                    )}
+                </div>
+            )}
+
+            {billing && !billing.read_only && billing.on_trial && !billing.subscribed && (
+                <div className="bg-amber-500 px-4 py-2 text-center text-sm text-white">
+                    Testzeitraum bis {billing.trial_ends_at}.{' '}
+                    {isCompanyAdmin && (
+                        <Link href={route('billing.index')} className="font-semibold underline">
+                            Abo auswählen
+                        </Link>
+                    )}
+                </div>
+            )}
 
             {header && (
                 <header className="bg-white shadow">

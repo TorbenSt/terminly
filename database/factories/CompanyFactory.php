@@ -24,6 +24,23 @@ class CompanyFactory extends Factory
             'phone' => fake()->phoneNumber(),
             'timezone' => 'Europe/Berlin',
             'is_active' => true,
+            // Neue Firmen starten wie in der App mit laufendem Testzeitraum.
+            'trial_ends_at' => now()->addDays(30),
         ];
+    }
+
+    public function billingExempt(): static
+    {
+        return $this->state(fn () => ['billing_exempt' => true, 'trial_ends_at' => null]);
+    }
+
+    public function expiredTrial(): static
+    {
+        return $this->state(fn () => ['trial_ends_at' => now()->subDay()]);
+    }
+
+    public function withoutTrial(): static
+    {
+        return $this->state(fn () => ['trial_ends_at' => null]);
     }
 }
