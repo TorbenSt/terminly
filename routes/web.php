@@ -49,10 +49,26 @@ Route::middleware(['auth', 'company', 'subscribed'])->group(function () {
     Route::get('/my-calendar', StaffCalendarController::class)->name('staff.calendar');
 });
 
+Route::middleware(['auth', 'company', 'subscribed', 'role:company_admin'])->prefix('prospects')->name('prospects.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\ProspectHubController::class, 'index'])->name('index');
+
+    Route::middleware('prospect_search')->group(function () {
+        Route::post('/profiles', [\App\Http\Controllers\ProspectSearchProfileController::class, 'store'])->name('profiles.store');
+        Route::patch('/profiles/{profile}', [\App\Http\Controllers\ProspectSearchProfileController::class, 'update'])->name('profiles.update');
+        Route::delete('/profiles/{profile}', [\App\Http\Controllers\ProspectSearchProfileController::class, 'destroy'])->name('profiles.destroy');
+        Route::post('/profiles/{profile}/run', [\App\Http\Controllers\ProspectSearchProfileController::class, 'run'])->name('profiles.run');
+        Route::patch('/{prospect}', [\App\Http\Controllers\CustomerProspectController::class, 'update'])->name('update');
+        Route::delete('/{prospect}', [\App\Http\Controllers\CustomerProspectController::class, 'destroy'])->name('destroy');
+        Route::post('/{prospect}/outreach', [\App\Http\Controllers\CustomerProspectController::class, 'outreach'])->name('outreach');
+        Route::post('/{prospect}/convert', [\App\Http\Controllers\CustomerProspectController::class, 'convert'])->name('convert');
+    });
+});
+
 // Billing-Routen bewusst ohne 'subscribed'-Middleware, damit sie ohne aktives Abo erreichbar bleiben.
 Route::middleware(['auth', 'company', 'role:company_admin'])->prefix('billing')->name('billing.')->group(function () {
     Route::get('/', [SubscriptionController::class, 'index'])->name('index');
     Route::post('/checkout', [SubscriptionController::class, 'checkout'])->name('checkout');
+    Route::post('/prospect-addon', [SubscriptionController::class, 'purchaseProspectAddon'])->name('prospect-addon');
     Route::get('/portal', [SubscriptionController::class, 'portal'])->name('portal');
 });
 
@@ -83,6 +99,8 @@ Route::prefix('p')->name('public.')->group(function () {
     Route::post('/proposals/{token}/reject', [ProposalResponseController::class, 'reject'])->name('proposals.reject');
     Route::get('/negotiations/{token}', [NegotiationController::class, 'show'])->name('negotiations.show');
     Route::post('/negotiations/{token}', [NegotiationController::class, 'store'])->name('negotiations.store');
+    Route::get('/prospect-opt-out/{token}', [\App\Http\Controllers\Public\ProspectOptOutController::class, 'show'])->name('prospect-opt-out.show');
+    Route::post('/prospect-opt-out/{token}', [\App\Http\Controllers\Public\ProspectOptOutController::class, 'store'])->name('prospect-opt-out.store');
 });
 
 require __DIR__.'/auth.php';

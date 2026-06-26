@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AppointmentStatus;
+use App\Enums\ProspectStatus;
 use App\Models\Appointment;
+use App\Models\CustomerProspect;
 use App\Models\RecurringService;
 use App\Models\StaffMember;
 use Illuminate\Http\Request;
@@ -38,6 +40,10 @@ class DashboardController extends Controller
                     ->whereDate('scheduled_at', today())
                     ->count(),
                 'active_staff' => StaffMember::where('company_id', $companyId)->where('is_active', true)->count(),
+                'prospect_search_enabled' => $user->company?->hasProspectSearchAccess() ?? false,
+                'new_prospects' => $user->company?->hasProspectSearchAccess()
+                    ? CustomerProspect::where('company_id', $companyId)->where('status', ProspectStatus::New)->count()
+                    : 0,
             ],
             'recentAppointments' => Appointment::with(['customer', 'serviceType', 'staffMember'])
                 ->where('company_id', $companyId)

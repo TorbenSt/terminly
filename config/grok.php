@@ -75,4 +75,25 @@ return [
     |
     */
     'timeout' => env('GROK_API_TIMEOUT', (int) DefaultConfig::TIMEOUT->value),
+
+    /*
+    |--------------------------------------------------------------------------
+    | xAI Collections (Management API + documents/search)
+    |--------------------------------------------------------------------------
+    |
+    | API key: Chat + documents/search on api.x.ai
+    | Management key: Collection create/upload on management-api.x.ai
+    |
+    */
+    'xai' => [
+        'api_key' => env('GROK_API_KEY', env('XAI_API_KEY')),
+        'management_api_key' => env('XAI_MANAGEMENT_API_KEY'),
+        'api_base_url' => env('XAI_API_BASE_URL', 'https://api.x.ai/v1'),
+        'collections_base_url' => env('XAI_COLLECTIONS_BASE_URL', 'https://management-api.x.ai/v1'),
+    ],
+
+    'collections' => [
+        'name_prefix' => env('GROK_PROSPECT_COLLECTION_PREFIX', 'appointment-prospect-feedback'),
+        'search_limit' => (int) env('GROK_COLLECTION_SEARCH_LIMIT', 10),
+    ],
 ];

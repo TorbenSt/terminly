@@ -26,6 +26,8 @@ class Company extends Model
         'trial_ends_at',
         'staff_limit_override',
         'customer_limit_override',
+        'prospect_search_override',
+        'grok_feedback_collection_id',
     ];
 
     protected function casts(): array
@@ -36,6 +38,7 @@ class Company extends Model
             'trial_ends_at' => 'datetime',
             'staff_limit_override' => 'integer',
             'customer_limit_override' => 'integer',
+            'prospect_search_override' => 'boolean',
         ];
     }
 
@@ -69,6 +72,16 @@ class Company extends Model
         return $this->hasMany(Appointment::class);
     }
 
+    public function prospectSearchProfiles(): HasMany
+    {
+        return $this->hasMany(ProspectSearchProfile::class);
+    }
+
+    public function customerProspects(): HasMany
+    {
+        return $this->hasMany(CustomerProspect::class);
+    }
+
     public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);
@@ -95,5 +108,46 @@ class Company extends Model
         return $this->billing_exempt
             || $this->onGenericTrial()
             || $this->hasActiveSubscription();
+    }
+
+    public function hasProspectSearchAddon(): bool
+    {
+        $subscription = $this->subscription('default');
+
+        if (! $subscription || ! $subscription->valid()) {
+            return false;
+        }
+
+        $priceId = BillingSetting::prospectSearchStripePriceId();
+
+        if (! $priceId) {
+            return false;
+        }
+
+        return $subscription->items()->where('stripe_price', $priceId)->exists();
+    }
+
+    /**
+     * Kundensuche-Modul: Demo-befreit, Plan-Feature, Add-on oder Super-Admin-Override.
+     */
+    public function hasProspectSearchAccess(): bool
+    {
+        if ($this->billing_exempt) {
+            return true;
+        }
+
+        if ($this->prospect_search_override === true) {
+            return true;
+        }
+
+        if ($this->prospect_search_override === false) {
+            return false;
+        }
+
+        if ($this->effectivePlan()?->includes_prospect_search) {
+            return true;
+        }
+
+        return $this->hasProspectSearchAddon();
     }
 }

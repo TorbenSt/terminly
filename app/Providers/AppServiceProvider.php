@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Models\Appointment;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerProspect;
+use App\Models\ProspectSearchProfile;
 use App\Models\RecurringService;
 use App\Models\ServiceType;
 use App\Models\StaffMember;
@@ -13,6 +15,7 @@ use App\Observers\StaffMemberObserver;
 use App\Policies\AppointmentPolicy;
 use App\Policies\CompanyPolicy;
 use App\Policies\CustomerPolicy;
+use App\Policies\ProspectPolicy;
 use App\Policies\RecurringServicePolicy;
 use App\Policies\ServiceTypePolicy;
 use App\Policies\StaffMemberPolicy;
@@ -41,6 +44,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(StaffMember::class, StaffMemberPolicy::class);
         Gate::policy(Appointment::class, AppointmentPolicy::class);
         Gate::policy(RecurringService::class, RecurringServicePolicy::class);
+        Gate::policy(CustomerProspect::class, ProspectPolicy::class);
+        Gate::policy(ProspectSearchProfile::class, ProspectPolicy::class);
 
         Gate::before(function ($user, $ability) {
             if ($user?->isSuperAdmin()) {

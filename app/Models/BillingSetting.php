@@ -24,4 +24,19 @@ class BillingSetting extends Model
     {
         return (int) static::get('default_trial_days', (string) self::DEFAULT_TRIAL_DAYS);
     }
+
+    public static function prospectSearchPriceCents(): int
+    {
+        return (int) static::get('prospect_search_price_cents', '1900');
+    }
+
+    public static function prospectSearchStripeProductId(): ?string
+    {
+        return static::get('prospect_search_stripe_product_id');
+    }
+
+    public static function prospectSearchStripePriceId(): ?string
+    {
+        return static::get('prospect_search_stripe_price_id');
+    }
 }

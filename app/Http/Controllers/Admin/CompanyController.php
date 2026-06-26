@@ -53,6 +53,8 @@ class CompanyController extends Controller
                 'active_customers_count' => $company->active_customers_count,
                 'staff_limit' => $this->limits->staffLimit($company),
                 'customer_limit' => $this->limits->customerLimit($company),
+                'prospect_search_override' => $company->prospect_search_override,
+                'has_prospect_search' => $company->hasProspectSearchAccess(),
             ]);
 
         return Inertia::render('Admin/Companies/Index', [
@@ -95,6 +97,7 @@ class CompanyController extends Controller
             // -1 = unendlich, null = Plan-Wert
             'staff_limit_override' => ['nullable', 'integer', 'min:-1'],
             'customer_limit_override' => ['nullable', 'integer', 'min:-1'],
+            'prospect_search_override' => ['nullable', 'boolean'],
             'trial_ends_at' => ['nullable', 'date'],
         ]);
 

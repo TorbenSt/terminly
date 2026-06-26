@@ -63,6 +63,11 @@ export default function Authenticated({
                                             Services
                                         </NavLink>
                                         {isCompanyAdmin && (
+                                            <NavLink href={route('prospects.index')} active={route().current('prospects.*')}>
+                                                Kundensuche
+                                            </NavLink>
+                                        )}
+                                        {isCompanyAdmin && (
                                             <NavLink href={route('staff.index')} active={route().current('staff.*')}>
                                                 Mitarbeiter
                                             </NavLink>

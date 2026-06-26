@@ -37,6 +37,28 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
             ],
             'billing' => fn () => $this->billingStatus($request),
+            'prospectSearch' => fn () => $this->prospectSearchStatus($request),
+        ];
+    }
+
+    protected function prospectSearchStatus(Request $request): ?array
+    {
+        $user = $request->user();
+
+        if (! $user || $user->isSuperAdmin() || ! $user->company_id || ! $user->isCompanyAdmin()) {
+            return null;
+        }
+
+        $company = $user->company;
+
+        if (! $company) {
+            return null;
+        }
+
+        return [
+            'has_access' => $company->hasProspectSearchAccess(),
+            'has_addon' => $company->hasProspectSearchAddon(),
+            'included_in_plan' => (bool) $company->effectivePlan()?->includes_prospect_search,
         ];
     }
 

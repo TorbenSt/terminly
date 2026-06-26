@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureCompanySubscribed;
+use App\Http\Middleware\EnsureProspectSearchEnabled;
 use App\Http\Middleware\EnsureUserHasCompany;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'company' => EnsureUserHasCompany::class,
             'subscribed' => EnsureCompanySubscribed::class,
+            'prospect_search' => EnsureProspectSearchEnabled::class,
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
