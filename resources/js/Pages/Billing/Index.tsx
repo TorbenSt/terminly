@@ -43,6 +43,12 @@ interface Props {
     usage: BillingUsage;
     invoices: Invoice[];
     stripeConfigured: boolean;
+    prospectAddon: {
+        price_cents: number;
+        has_access: boolean;
+        has_addon: boolean;
+        included_in_plan: boolean;
+    };
 }
 
 function limitLabel(limit: number | null): string {
@@ -73,8 +79,9 @@ function UsageBar({ label, usage, limit }: { label: string; usage: number; limit
     );
 }
 
-export default function Index({ company, currentPlan, effectivePlan, plans, usage, invoices, stripeConfigured }: Props) {
+export default function Index({ company, currentPlan, effectivePlan, plans, usage, invoices, stripeConfigured, prospectAddon }: Props) {
     const [processingPlanId, setProcessingPlanId] = useState<number | null>(null);
+    const [processingAddon, setProcessingAddon] = useState(false);
 
     const startCheckout = (plan: Plan) => {
         router.post(
@@ -85,6 +92,13 @@ export default function Index({ company, currentPlan, effectivePlan, plans, usag
                 onFinish: () => setProcessingPlanId(null),
             },
         );
+    };
+
+    const purchaseProspectAddon = () => {
+        router.post(route('billing.prospect-addon'), {}, {
+            onStart: () => setProcessingAddon(true),
+            onFinish: () => setProcessingAddon(false),
+        });
     };
 
     return (
@@ -144,6 +158,52 @@ export default function Index({ company, currentPlan, effectivePlan, plans, usag
                             )}
                         </CardContent>
                     </Card>
+
+                    {company.subscribed && !prospectAddon.has_access && !company.billing_exempt && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Kundensuche Add-on</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <p className="text-sm text-muted-foreground">
+                                    Finden Sie potenzielle B2B-Kunden per Google Places in Ihrer Region — mit KI-Bewertung
+                                    und Kaltakquise-E-Mails.
+                                </p>
+                                <Button
+                                    disabled={!stripeConfigured || processingAddon}
+                                    onClick={purchaseProspectAddon}
+                                >
+                                    {processingAddon
+                                        ? 'Wird gebucht…'
+                                        : `Kundensuche buchen (${formatCents(prospectAddon.price_cents)}/Monat)`}
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {prospectAddon.has_access && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Kundensuche</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Badge>Aktiv</Badge>
+                                    {prospectAddon.included_in_plan && (
+                                        <span className="text-sm text-muted-foreground">Im Abo enthalten</span>
+                                    )}
+                                    {prospectAddon.has_addon && !prospectAddon.included_in_plan && (
+                                        <span className="text-sm text-muted-foreground">
+                                            Add-on ({formatCents(prospectAddon.price_cents)}/Monat)
+                                        </span>
+                                    )}
+                                    {company.billing_exempt && (
+                                        <span className="text-sm text-muted-foreground">Demo-Zugang</span>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {!company.subscribed && !company.billing_exempt && (
                         <Card>

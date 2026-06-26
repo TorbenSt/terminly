@@ -11,6 +11,8 @@ interface Props {
         open_negotiations?: number;
         confirmed_today?: number;
         active_staff?: number;
+        prospect_search_enabled?: boolean;
+        new_prospects?: number;
     };
     recentAppointments?: AppointmentListItem[];
 }
@@ -57,6 +59,21 @@ export default function Dashboard({ stats, recentAppointments = [] }: Props) {
                         </Card>
                     ))}
                 </div>
+
+                {stats.prospect_search_enabled && (
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <CardTitle>Kundensuche</CardTitle>
+                            <Link href={route('prospects.index')} className="text-sm text-primary underline">
+                                Öffnen →
+                            </Link>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-3xl font-bold">{stats.new_prospects ?? 0}</p>
+                            <p className="text-sm text-muted-foreground">neue potenzielle Kunden</p>
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card>
                     <CardHeader>

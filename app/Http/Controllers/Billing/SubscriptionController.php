@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Models\BillingSetting;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Services\Billing\PlanLimitService;
@@ -67,6 +68,12 @@ class SubscriptionController extends Controller
             'usage' => $this->limits->summary($company),
             'invoices' => $invoices,
             'stripeConfigured' => (bool) config('cashier.secret'),
+            'prospectAddon' => [
+                'price_cents' => BillingSetting::prospectSearchPriceCents(),
+                'has_access' => $company->hasProspectSearchAccess(),
+                'has_addon' => $company->hasProspectSearchAddon(),
+                'included_in_plan' => (bool) $company->effectivePlan()?->includes_prospect_search,
+            ],
         ]);
     }
 
@@ -111,6 +118,43 @@ class SubscriptionController extends Controller
         }
 
         return $company->redirectToBillingPortal(route('billing.index'));
+    }
+
+    public function purchaseProspectAddon(Request $request): SymfonyResponse|RedirectResponse
+    {
+        $company = $request->user()->company;
+
+        if ($company->hasProspectSearchAccess()) {
+            return back()->with('success', 'Kundensuche ist bereits freigeschaltet.');
+        }
+
+        if (! config('cashier.secret')) {
+            return back()->with('error', 'Stripe ist nicht konfiguriert.');
+        }
+
+        $priceId = BillingSetting::prospectSearchStripePriceId();
+
+        if (! $priceId) {
+            return back()->with('error', 'Kundensuche Add-on ist noch nicht konfiguriert.');
+        }
+
+        $subscription = $company->subscription('default');
+
+        if ($subscription && $subscription->valid()) {
+            $subscription->noProrate()->addPrice($priceId);
+
+            return redirect()->route('prospects.index')->with('success', 'Kundensuche Add-on wurde gebucht.');
+        }
+
+        $checkout = $company
+            ->newSubscription('default', $priceId)
+            ->allowPromotionCodes()
+            ->checkout([
+                'success_url' => route('prospects.index', ['checkout' => 'addon_success']),
+                'cancel_url' => route('billing.index', ['checkout' => 'cancelled']),
+            ]);
+
+        return Inertia::location($checkout->url);
     }
 
     /**

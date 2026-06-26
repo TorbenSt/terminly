@@ -24,6 +24,7 @@ class PlanController extends Controller
                 ->orderBy('price_cents')
                 ->get(),
             'defaultTrialDays' => BillingSetting::defaultTrialDays(),
+            'prospectSearchPriceCents' => BillingSetting::prospectSearchPriceCents(),
             'stripeConfigured' => (bool) config('cashier.secret'),
         ]);
     }
@@ -68,6 +69,9 @@ class PlanController extends Controller
             'extra_customer_price_cents' => ['required', 'integer', 'min:0'],
             'is_active' => ['boolean'],
             'is_default' => ['boolean'],
+            'includes_prospect_search' => ['boolean'],
+            'max_prospect_results_per_run' => ['nullable', 'integer', 'min:1', 'max:200'],
+            'prospect_outreach_limit_per_day' => ['nullable', 'integer', 'min:0', 'max:500'],
         ]);
     }
 }

@@ -4,9 +4,9 @@
 
 | Meta | Wert |
 |------|------|
-| **Branch** | `master` (Stripe-Billing gemerged von `feature/stripe-billing`) |
+| **Branch** | `customersearch` (KI-Kundensuche) |
 | **Letztes Update** | 2026-06-23 |
-| **Letzter Commit** | `b95dc9f` — docs: add STATUS.md as living project memory |
+| **Letzter Commit** | uncommitted — Kundensuche auf Branch `customersearch` |
 
 ---
 
@@ -115,6 +115,42 @@ Wiederkehrende Services → (manuell oder Cron 06:00) → PLZ-Clustering
 
 ---
 
+## Kundensuche (KI-Prospects)
+
+Branch `customersearch`. Potenzielle B2B-Kunden per Google Places + Grok-Bewertung.
+
+| Funktion | Beschreibung |
+|----------|--------------|
+| **Datenquelle** | Wählbar pro Suchprofil: **Google Places API** oder **Apify** (`compass/crawler-google-places`) |
+| **KI** | Grok bewertet Treffer nach Branchen & Sonderhinweisen (`GrokProspectSearchService`) |
+| **Dedup** | Bestehende Kunden per `place_id`, Name, Telefon, E-Mail, PLZ+Stadt ausschließen |
+| **Speicherung** | Separate Tabelle `customer_prospects` — zählt nicht gegen Kunden-Limit bis `convert` |
+| **Zugriff** | `Company::hasProspectSearchAccess()` = `billing_exempt` ODER Override ODER Plan-Feature ODER Stripe-Add-on |
+| **Billing** | `plans.includes_prospect_search`, Add-on-Preis in `billing_settings`, `prospect_search_override` pro Firma |
+| **Outreach** | Kaltakquise-E-Mail mit Opt-out (`/p/prospects/opt-out/{token}`) |
+| **Feedback** | `prospect_feedback` + Grok Collections RAG (`documents/search`, hybrid) pro Firma |
+| **Scheduler** | `prospects:run-scheduled` täglich 07:00; `prospects:purge-old` wöchentlich (DSGVO) |
+
+**Env:** `GOOGLE_PLACES_API_KEY`, `APIFY_TOKEN`, `APIFY_PROSPECT_ACTOR_ID`, `PROSPECT_MAX_RESULTS_CAP`, `PROSPECT_RETENTION_DAYS`, `PROSPECT_OUTREACH_RATE_LIMIT_PER_DAY`, `XAI_API_KEY`, `XAI_MANAGEMENT_API_KEY`.
+
+**Routen (company_admin):**
+
+| Pfad | Zweck |
+|------|-------|
+| `/prospects` | Dashboard, Suchprofile, Prospect-Liste, Upsell |
+| `/billing/prospect-addon` | Add-on buchen (POST) |
+| `/p/prospects/opt-out/{token}` | Öffentlicher Opt-out |
+
+**Wichtige Dateien:**
+
+- `app/Services/Prospect/` — Geocoding, Google Places, Dedup, Orchestrator, Feedback
+- `app/AI/GrokProspectSearchService.php`
+- `app/Jobs/SearchCustomerProspectsJob.php`, `SendProspectOutreachJob.php`
+- `app/Http/Controllers/ProspectHubController.php`, `ProspectSearchProfileController.php`, `CustomerProspectController.php`
+- `resources/js/Pages/Prospects/Index.tsx`
+
+---
+
 ## Billing & Abos (Stripe)
 
 Implementiert auf Branch `feature/stripe-billing`. Billable-Entity: `Company` (Laravel Cashier).
@@ -200,16 +236,19 @@ Implementiert auf Branch `feature/stripe-billing`. Billable-Entity: `Company` (L
 | Pfad | Seite |
 |------|-------|
 | `/billing` | Abo & Abrechnung (ohne `subscribed`-Middleware) |
+| `/prospects` | Kundensuche (Upsell ohne Feature; Schreibzugriff mit `prospect_search`-Middleware) |
 
 ---
 
 ## Tests
 
-56 Feature-/Unit-Tests (Stand nach Stripe-Billing). Billing-relevant:
+61 Feature-/Unit-Tests. Billing-relevant:
 
 - `tests/Feature/BillingAccessTest.php` — Read-only, Trial, Billing-Seite
 - `tests/Feature/PlanLimitServiceTest.php` — Limits, Overrides, Überschreitung
 - `tests/Feature/PlanAdminTest.php` — Plan-CRUD, Company-Billing, Usage-Sync-Job
+- `tests/Feature/ProspectSearchTest.php` — Zugriff, Profile, Dedup, Billing-Gate
+- `tests/Feature/ProspectGrokAndOutreachTest.php` — Grok Collections, Outreach-Limit, Feedback-Sync
 
 ---
 
@@ -219,3 +258,6 @@ Implementiert auf Branch `feature/stripe-billing`. Billable-Entity: `Company` (L
 |-------|----------|
 | 2026-06-13 | Initiale STATUS.md: Struktur- & Fähigkeitsübersicht inkl. Stripe-Billing auf `feature/stripe-billing` |
 | 2026-06-23 | `feature/stripe-billing` in `master` gemerged (Fast-forward) |
+| 2026-06-23 | KI-Kundensuche auf Branch `customersearch`: Google Places, Grok-Scoring, Billing-Gate, Outreach, Opt-out |
+| 2026-06-24 | Grok Collections RAG für Prospect-Feedback, Outreach-Tageslimit, Stripe Add-on Sync im Seeder |
+| 2026-06-26 | Datenquellen-Switch: Google Places oder Apify pro Suchprofil |

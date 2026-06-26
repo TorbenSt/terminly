@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\BillingSetting;
 use App\Models\Plan;
+use App\Services\Billing\ProspectAddonService;
 use Illuminate\Database\Seeder;
 
 class PlanSeeder extends Seeder
@@ -29,5 +30,14 @@ class PlanSeeder extends Seeder
             ['key' => 'default_trial_days'],
             ['value' => (string) BillingSetting::DEFAULT_TRIAL_DAYS]
         );
+
+        BillingSetting::firstOrCreate(
+            ['key' => 'prospect_search_price_cents'],
+            ['value' => '1900']
+        );
+
+        if (config('cashier.secret')) {
+            app(ProspectAddonService::class)->syncStripePrice();
+        }
     }
 }

@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('appointments:schedule-due')->dailyAt('06:00');
+Schedule::command('prospects:run-scheduled')->dailyAt('07:00');
+Schedule::command('prospects:purge-old')->weeklyOn(0, '03:00');

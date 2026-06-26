@@ -25,6 +25,9 @@ class Plan extends Model
         'stripe_customer_price_id',
         'is_active',
         'is_default',
+        'includes_prospect_search',
+        'max_prospect_results_per_run',
+        'prospect_outreach_limit_per_day',
     ];
 
     protected function casts(): array
@@ -37,6 +40,9 @@ class Plan extends Model
             'extra_customer_price_cents' => 'integer',
             'is_active' => 'boolean',
             'is_default' => 'boolean',
+            'includes_prospect_search' => 'boolean',
+            'max_prospect_results_per_run' => 'integer',
+            'prospect_outreach_limit_per_day' => 'integer',
         ];
     }
 

@@ -24,6 +24,7 @@ class Customer extends Model
         'latitude',
         'longitude',
         'notes',
+        'google_place_id',
         'is_active',
     ];
 

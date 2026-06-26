@@ -19,6 +19,9 @@ interface Plan {
     included_customers: number | null;
     extra_staff_price_cents: number;
     extra_customer_price_cents: number;
+    includes_prospect_search: boolean;
+    max_prospect_results_per_run: number | null;
+    prospect_outreach_limit_per_day: number | null;
     is_active: boolean;
     is_default: boolean;
     companies_count: number;
@@ -27,6 +30,7 @@ interface Plan {
 interface Props {
     plans: Plan[];
     defaultTrialDays: number;
+    prospectSearchPriceCents: number;
     stripeConfigured: boolean;
 }
 
@@ -40,6 +44,9 @@ interface PlanFormData {
     customers_unlimited: boolean;
     extra_staff_price_euros: string;
     extra_customer_price_euros: string;
+    includes_prospect_search: boolean;
+    max_prospect_results_per_run: string;
+    prospect_outreach_limit_per_day: string;
     is_active: boolean;
     is_default: boolean;
 }
@@ -54,6 +61,9 @@ const emptyForm: PlanFormData = {
     customers_unlimited: false,
     extra_staff_price_euros: '',
     extra_customer_price_euros: '',
+    includes_prospect_search: false,
+    max_prospect_results_per_run: '25',
+    prospect_outreach_limit_per_day: '',
     is_active: true,
     is_default: false,
 };
@@ -62,9 +72,10 @@ function limitLabel(limit: number | null): string {
     return limit === null ? 'unendlich' : String(limit);
 }
 
-export default function Index({ plans, defaultTrialDays, stripeConfigured }: Props) {
+export default function Index({ plans, defaultTrialDays, prospectSearchPriceCents, stripeConfigured }: Props) {
     const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
     const [trialDays, setTrialDays] = useState(String(defaultTrialDays));
+    const [prospectPriceEuros, setProspectPriceEuros] = useState(centsToEuros(prospectSearchPriceCents));
     const [form, setForm] = useState<PlanFormData>(emptyForm);
     const [processing, setProcessing] = useState(false);
     const trialForm = useForm({ default_trial_days: defaultTrialDays });
@@ -84,6 +95,11 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
             customers_unlimited: plan.included_customers === null,
             extra_staff_price_euros: centsToEuros(plan.extra_staff_price_cents),
             extra_customer_price_euros: centsToEuros(plan.extra_customer_price_cents),
+            includes_prospect_search: plan.includes_prospect_search,
+            max_prospect_results_per_run:
+                plan.max_prospect_results_per_run === null ? '' : String(plan.max_prospect_results_per_run),
+            prospect_outreach_limit_per_day:
+                plan.prospect_outreach_limit_per_day === null ? '' : String(plan.prospect_outreach_limit_per_day),
             is_active: plan.is_active,
             is_default: plan.is_default,
         });
@@ -105,6 +121,13 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
             included_customers: form.customers_unlimited ? null : parseInt(form.included_customers || '0', 10),
             extra_staff_price_cents: eurosToCents(form.extra_staff_price_euros),
             extra_customer_price_cents: eurosToCents(form.extra_customer_price_euros),
+            includes_prospect_search: form.includes_prospect_search,
+            max_prospect_results_per_run: form.max_prospect_results_per_run
+                ? parseInt(form.max_prospect_results_per_run, 10)
+                : null,
+            prospect_outreach_limit_per_day: form.prospect_outreach_limit_per_day
+                ? parseInt(form.prospect_outreach_limit_per_day, 10)
+                : null,
             is_active: form.is_active,
             is_default: form.is_default,
         };
@@ -136,7 +159,10 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
 
     const saveTrialDays = (e: FormEvent) => {
         e.preventDefault();
-        trialForm.transform(() => ({ default_trial_days: parseInt(trialDays || '0', 10) }));
+        trialForm.transform(() => ({
+            default_trial_days: parseInt(trialDays || '0', 10),
+            prospect_search_price_cents: eurosToCents(prospectPriceEuros),
+        }));
         trialForm.patch(route('admin.billing-settings.update'));
     };
 
@@ -157,10 +183,10 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
 
                     <Card>
                         <CardHeader>
-                            <CardTitle>Testzeitraum</CardTitle>
+                            <CardTitle>Billing-Einstellungen</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <form onSubmit={saveTrialDays} className="flex flex-wrap items-end gap-4">
+                            <form onSubmit={saveTrialDays} className="grid gap-4 md:grid-cols-2">
                                 <div>
                                     <Label htmlFor="trial-days">Standard-Testzeitraum für neue Firmen (Tage)</Label>
                                     <Input
@@ -174,9 +200,24 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
                                     />
                                     <p className="mt-1 text-xs text-muted-foreground">0 = kein Testzeitraum</p>
                                 </div>
-                                <Button type="submit" disabled={trialForm.processing}>
-                                    Speichern
-                                </Button>
+                                <div>
+                                    <Label htmlFor="prospect-addon-price">Kundensuche Add-on (€/Monat)</Label>
+                                    <Input
+                                        id="prospect-addon-price"
+                                        inputMode="decimal"
+                                        placeholder="z.B. 19,00"
+                                        value={prospectPriceEuros}
+                                        onChange={(e) => setProspectPriceEuros(e.target.value)}
+                                    />
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Für Firmen ohne Kundensuche im Abo. Bei Änderung wird ein neuer Stripe-Preis angelegt.
+                                    </p>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <Button type="submit" disabled={trialForm.processing}>
+                                        Speichern
+                                    </Button>
+                                </div>
                             </form>
                         </CardContent>
                     </Card>
@@ -287,6 +328,46 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
                                     </div>
                                 </div>
 
+                                <div className="space-y-2 rounded-md border p-4 md:col-span-2">
+                                    <p className="font-medium">Kundensuche (KI-Prospects)</p>
+                                    <label className="flex items-center gap-2 text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={form.includes_prospect_search}
+                                            onChange={(e) => setField('includes_prospect_search', e.target.checked)}
+                                        />
+                                        Kundensuche im Abo enthalten
+                                    </label>
+                                    <div>
+                                        <Label htmlFor="plan-prospect-max">Max. Ergebnisse pro Suchlauf</Label>
+                                        <Input
+                                            id="plan-prospect-max"
+                                            type="number"
+                                            min={1}
+                                            max={200}
+                                            className="w-32"
+                                            value={form.max_prospect_results_per_run}
+                                            onChange={(e) => setField('max_prospect_results_per_run', e.target.value)}
+                                            placeholder="z.B. 50"
+                                        />
+                                        <p className="mt-1 text-xs text-muted-foreground">Leer = globaler Cap ({100})</p>
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="plan-outreach-limit">Max. Kaltakquise-E-Mails pro Tag</Label>
+                                        <Input
+                                            id="plan-outreach-limit"
+                                            type="number"
+                                            min={0}
+                                            max={500}
+                                            className="w-32"
+                                            value={form.prospect_outreach_limit_per_day}
+                                            onChange={(e) => setField('prospect_outreach_limit_per_day', e.target.value)}
+                                            placeholder="z.B. 20"
+                                        />
+                                        <p className="mt-1 text-xs text-muted-foreground">Leer = Env-Standard (20/Tag)</p>
+                                    </div>
+                                </div>
+
                                 <div className="flex flex-wrap items-center gap-6 md:col-span-2">
                                     <label className="flex items-center gap-2 text-sm">
                                         <input
@@ -349,6 +430,7 @@ export default function Index({ plans, defaultTrialDays, stripeConfigured }: Pro
                                                     {formatCents(plan.price_cents)}/Monat · Mitarbeiter:{' '}
                                                     {limitLabel(plan.included_staff)} (+{formatCents(plan.extra_staff_price_cents)}/Monat je weiterer) · Kunden:{' '}
                                                     {limitLabel(plan.included_customers)} (+{formatCents(plan.extra_customer_price_cents)}/Monat je weiterer)
+                                                    {plan.includes_prospect_search && ' · Kundensuche inkl.'}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground">
                                                     {plan.companies_count} Firma/Firmen auf diesem Abo

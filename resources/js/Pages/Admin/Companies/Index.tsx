@@ -27,6 +27,8 @@ interface Company {
     active_customers_count: number;
     staff_limit: number | null;
     customer_limit: number | null;
+    prospect_search_override: boolean | null;
+    has_prospect_search: boolean;
 }
 
 interface PlanOption {
@@ -43,6 +45,7 @@ interface Props {
 }
 
 type OverrideMode = 'plan' | 'unlimited' | 'custom';
+type ProspectSearchMode = 'plan' | 'enabled' | 'disabled';
 
 interface BillingFormState {
     plan_id: string;
@@ -52,6 +55,7 @@ interface BillingFormState {
     staff_value: string;
     customer_mode: OverrideMode;
     customer_value: string;
+    prospect_search_mode: ProspectSearchMode;
     trial_ends_at: string;
 }
 
@@ -65,6 +69,18 @@ function overrideValue(mode: OverrideMode, value: string): number | null {
     if (mode === 'plan') return null;
     if (mode === 'unlimited') return -1;
     return parseInt(value || '0', 10);
+}
+
+function prospectSearchMode(value: boolean | null): ProspectSearchMode {
+    if (value === true) return 'enabled';
+    if (value === false) return 'disabled';
+    return 'plan';
+}
+
+function prospectSearchOverride(mode: ProspectSearchMode): boolean | null {
+    if (mode === 'enabled') return true;
+    if (mode === 'disabled') return false;
+    return null;
 }
 
 function limitLabel(limit: number | null): string {
@@ -90,6 +106,7 @@ function CompanyBillingForm({ company, plans }: { company: Company; plans: PlanO
         customer_mode: overrideMode(company.customer_limit_override),
         customer_value:
             company.customer_limit_override !== null && company.customer_limit_override >= 0 ? String(company.customer_limit_override) : '',
+        prospect_search_mode: prospectSearchMode(company.prospect_search_override),
         trial_ends_at: company.trial_ends_at ?? '',
     });
     const [processing, setProcessing] = useState(false);
@@ -105,6 +122,7 @@ function CompanyBillingForm({ company, plans }: { company: Company; plans: PlanO
                 is_active: form.is_active,
                 staff_limit_override: overrideValue(form.staff_mode, form.staff_value),
                 customer_limit_override: overrideValue(form.customer_mode, form.customer_value),
+                prospect_search_override: prospectSearchOverride(form.prospect_search_mode),
                 trial_ends_at: form.trial_ends_at || null,
             },
             {
@@ -202,6 +220,23 @@ function CompanyBillingForm({ company, plans }: { company: Company; plans: PlanO
                         />
                     )}
                 </div>
+            </div>
+
+            <div>
+                <Label htmlFor={`prospect-search-${company.id}`}>Kundensuche</Label>
+                <select
+                    id={`prospect-search-${company.id}`}
+                    className={selectClass}
+                    value={form.prospect_search_mode}
+                    onChange={(e) => setForm({ ...form, prospect_search_mode: e.target.value as ProspectSearchMode })}
+                >
+                    <option value="plan">Wert aus Abo / Add-on</option>
+                    <option value="enabled">Freigeschaltet (Override)</option>
+                    <option value="disabled">Gesperrt (Override)</option>
+                </select>
+                {company.has_prospect_search && (
+                    <p className="mt-1 text-xs text-green-700">Aktuell: Kundensuche verfügbar</p>
+                )}
             </div>
 
             <div className="flex flex-wrap items-center gap-6 md:col-span-2">
@@ -325,6 +360,7 @@ export default function Index({ companies, plans, defaultTrialDays }: Props) {
                                                         {company.slug} · Abo: {company.plan_name ?? '–'} · Mitarbeiter:{' '}
                                                         {company.active_staff_count}/{limitLabel(company.staff_limit)} · Kunden:{' '}
                                                         {company.active_customers_count}/{limitLabel(company.customer_limit)}
+                                                        {company.has_prospect_search ? ' · Kundensuche aktiv' : ''}
                                                     </p>
                                                 </div>
                                                 <Button
