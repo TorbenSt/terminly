@@ -4,9 +4,9 @@
 
 | Meta | Wert |
 |------|------|
-| **Branch** | `feature/stripe-billing` |
-| **Letztes Update** | 2026-06-13 |
-| **Letzter Commit** | `1fa3fb0` — feat: add Stripe subscription billing with plans, trials, and coupons |
+| **Branch** | `master` (Stripe-Billing gemerged von `feature/stripe-billing`) |
+| **Letztes Update** | 2026-06-23 |
+| **Letzter Commit** | `b95dc9f` — docs: add STATUS.md as living project memory |
 
 ---
 
@@ -218,3 +218,4 @@ Implementiert auf Branch `feature/stripe-billing`. Billable-Entity: `Company` (L
 | Datum | Änderung |
 |-------|----------|
 | 2026-06-13 | Initiale STATUS.md: Struktur- & Fähigkeitsübersicht inkl. Stripe-Billing auf `feature/stripe-billing` |
+| 2026-06-23 | `feature/stripe-billing` in `master` gemerged (Fast-forward) |
