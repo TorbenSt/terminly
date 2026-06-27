@@ -1,8 +1,21 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import YearCalendar from '@/components/YearCalendar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDateLongDe, formatTime24 } from '@/lib/datetime';
 import { Head, router } from '@inertiajs/react';
+
+function parseDateLocal(value: string): Date {
+    return new Date(`${value}T12:00:00`);
+}
+
+function toDateString(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
 
 interface Props {
     date: string;
@@ -12,10 +25,14 @@ interface Props {
 }
 
 export default function Calendar({ date, staffMember, slots, appointments }: Props) {
+    const selectDate = (nextDate: string) => {
+        router.get(route('staff.calendar'), { date: nextDate });
+    };
+
     const changeDate = (offset: number) => {
-        const d = new Date(date);
+        const d = parseDateLocal(date);
         d.setDate(d.getDate() + offset);
-        router.get(route('staff.calendar'), { date: d.toISOString().slice(0, 10) });
+        selectDate(toDateString(d));
     };
 
     return (
@@ -27,6 +44,8 @@ export default function Calendar({ date, staffMember, slots, appointments }: Pro
                     <span className="font-medium">{staffMember.name} · {formatDateLongDe(date)}</span>
                     <button type="button" onClick={() => changeDate(1)} className="rounded border px-3 py-1">→</button>
                 </div>
+
+                <YearCalendar selectedDate={date} onSelectDate={selectDate} />
 
                 <div className="grid gap-6 md:grid-cols-2">
                     <Card>
