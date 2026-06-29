@@ -40,7 +40,7 @@ export default function Index({ staffMembers, serviceTypes }: Props) {
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Mitarbeiter</h2>}>
             <Head title="Mitarbeiter" />
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 <Card>
                     <CardHeader><CardTitle>Neuer Mitarbeiter</CardTitle></CardHeader>
                     <CardContent>

@@ -38,7 +38,7 @@ export default function Calendar({ date, staffMember, slots, appointments }: Pro
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Mein Kalender</h2>}>
             <Head title="Kalender" />
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 <div className="flex items-center gap-4">
                     <button type="button" onClick={() => changeDate(-1)} className="rounded border px-3 py-1">←</button>
                     <span className="font-medium">{staffMember.name} · {formatDateLongDe(date)}</span>

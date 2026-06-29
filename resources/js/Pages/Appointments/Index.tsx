@@ -27,7 +27,7 @@ export default function Index({ appointments }: Props) {
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Termine</h2>}>
             <Head title="Termine" />
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 <div className="flex justify-end">
                     <Button onClick={triggerScheduling}>KI-Planung starten</Button>
                 </div>

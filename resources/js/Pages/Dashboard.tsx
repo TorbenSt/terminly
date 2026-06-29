@@ -22,7 +22,7 @@ export default function Dashboard({ stats, recentAppointments = [] }: Props) {
         return (
             <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Super Admin</h2>}>
                 <Head title="Dashboard" />
-                <div className="py-8">
+                <div className="space-y-6">
                     <Card className="mx-auto max-w-xl">
                         <CardContent className="pt-6">
                             <p className="mb-4 text-muted-foreground">Als Super-Admin verwalten Sie Unternehmen.</p>
@@ -46,7 +46,7 @@ export default function Dashboard({ stats, recentAppointments = [] }: Props) {
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Dashboard</h2>}>
             <Head title="Dashboard" />
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-4">
                     {cards.map((card) => (
                         <Card key={card.label}>
