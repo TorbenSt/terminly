@@ -172,8 +172,7 @@ export default function Index({ plans, defaultTrialDays, prospectSearchPriceCent
         >
             <Head title="Abos" />
 
-            <div className="py-12">
-                <div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+            <div className="space-y-6">
                     {!stripeConfigured && (
                         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
                             Stripe ist nicht konfiguriert (STRIPE_SECRET fehlt). Abos werden nur lokal
@@ -451,7 +450,6 @@ export default function Index({ plans, defaultTrialDays, prospectSearchPriceCent
                         </CardContent>
                     </Card>
                 </div>
-            </div>
         </AuthenticatedLayout>
     );
 }

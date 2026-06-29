@@ -152,7 +152,7 @@ export default function Index({ hasAccess, prospects, profiles, recentRuns, stat
         return (
             <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Kundensuche</h2>}>
                 <Head title="Kundensuche" />
-                <div className="py-8">
+                <div className="space-y-6">
                     <Card className="mx-auto max-w-2xl">
                         <CardHeader>
                             <CardTitle>Kundensuche freischalten</CardTitle>
@@ -194,7 +194,7 @@ export default function Index({ hasAccess, prospects, profiles, recentRuns, stat
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Kundensuche</h2>}>
             <Head title="Kundensuche" />
 
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 {stats && (
                     <div className="grid gap-4 md:grid-cols-3">
                         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Neu</p><p className="text-2xl font-bold">{stats.new_count}</p></CardContent></Card>

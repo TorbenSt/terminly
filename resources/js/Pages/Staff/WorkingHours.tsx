@@ -64,7 +64,7 @@ export default function WorkingHours({ staffMember, availabilities }: Props) {
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Arbeitszeiten</h2>}>
             <Head title="Arbeitszeiten" />
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 {flash?.success && (
                     <p className="rounded-md bg-green-50 p-3 text-sm text-green-800">{flash.success}</p>
                 )}

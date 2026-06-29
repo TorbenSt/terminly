@@ -289,8 +289,7 @@ export default function Index({ companies, plans, defaultTrialDays }: Props) {
         >
             <Head title="Unternehmen" />
 
-            <div className="py-12">
-                <div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+            <div className="space-y-6">
                     <Card>
                         <CardHeader>
                             <CardTitle>Neues Unternehmen</CardTitle>
@@ -383,7 +382,6 @@ export default function Index({ companies, plans, defaultTrialDays }: Props) {
                         </CardContent>
                     </Card>
                 </div>
-            </div>
         </AuthenticatedLayout>
     );
 }

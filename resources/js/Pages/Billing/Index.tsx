@@ -107,8 +107,7 @@ export default function Index({ company, currentPlan, effectivePlan, plans, usag
         >
             <Head title="Abo & Abrechnung" />
 
-            <div className="py-12">
-                <div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+            <div className="space-y-6">
                     <Card>
                         <CardHeader>
                             <CardTitle>Status</CardTitle>
@@ -301,7 +300,6 @@ export default function Index({ company, currentPlan, effectivePlan, plans, usag
                         </CardContent>
                     </Card>
                 </div>
-            </div>
         </AuthenticatedLayout>
     );
 }

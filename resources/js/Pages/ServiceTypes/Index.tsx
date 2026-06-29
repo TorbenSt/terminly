@@ -169,7 +169,7 @@ export default function Index({ serviceTypes }: Props) {
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Servicearten</h2>}>
             <Head title="Servicearten" />
-            <div className="space-y-6 py-8">
+            <div className="space-y-6">
                 {flash?.success && (
                     <p className="rounded-md bg-green-50 p-3 text-sm text-green-800">{flash.success}</p>
                 )}
