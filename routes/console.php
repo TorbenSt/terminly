@@ -11,3 +11,4 @@ Artisan::command('inspire', function () {
 Schedule::command('appointments:schedule-due')->dailyAt('06:00');
 Schedule::command('prospects:run-scheduled')->dailyAt('07:00');
 Schedule::command('prospects:purge-old')->weeklyOn(0, '03:00');
+Schedule::command('scheduling-lab:purge')->weeklyOn(0, '04:00');

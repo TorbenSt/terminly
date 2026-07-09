@@ -38,6 +38,9 @@ class HandleInertiaRequests extends Middleware
             ],
             'billing' => fn () => $this->billingStatus($request),
             'prospectSearch' => fn () => $this->prospectSearchStatus($request),
+            'schedulingLab' => fn () => [
+                'enabled' => (bool) config('scheduling_lab.enabled'),
+            ],
         ];
     }
 

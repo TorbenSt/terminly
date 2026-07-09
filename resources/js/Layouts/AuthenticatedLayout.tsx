@@ -13,6 +13,8 @@ export default function Authenticated({
     const pageProps = usePage().props;
     const user = pageProps.auth.user;
     const billing = pageProps.billing as BillingStatus | null | undefined;
+    const schedulingLab = pageProps.schedulingLab as { enabled?: boolean } | undefined;
+    const configSchedulingLab = schedulingLab?.enabled ?? false;
 
     const [showingNavigationDropdown, setShowingNavigationDropdown] =
         useState(false);
@@ -55,6 +57,14 @@ export default function Authenticated({
                                         <NavLink href={route('admin.coupons.index')} active={route().current('admin.coupons.*')}>
                                             Gutscheine
                                         </NavLink>
+                                        {configSchedulingLab && (
+                                            <NavLink
+                                                href={route('admin.scheduling-lab.index')}
+                                                active={route().current('admin.scheduling-lab.*')}
+                                            >
+                                                Scheduling Lab
+                                            </NavLink>
+                                        )}
                                     </>
                                 )}
                                 {!user.is_super_admin && (

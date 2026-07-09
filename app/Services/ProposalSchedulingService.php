@@ -5,7 +5,9 @@ namespace App\Services;
 use App\AI\GrokSchedulerService;
 use App\Enums\AppointmentStatus;
 use App\Enums\NegotiationStatus;
-use App\Jobs\SendProposalEmailJob;
+use App\Models\SchedulingSandboxRun;
+use App\Services\SchedulingSandbox\SchedulingSandboxMailRecorder;
+use App\Services\SchedulingSandbox\SandboxJobDispatcher;
 use App\Models\Appointment;
 use App\Models\AppointmentNegotiation;
 use App\Models\AppointmentProposal;
@@ -49,7 +51,7 @@ class ProposalSchedulingService
         ]);
 
         $proposal = $this->createProposalFromAssignment($appointment->company, $assignment, $appointment);
-        SendProposalEmailJob::dispatch($proposal);
+        SandboxJobDispatcher::dispatchProposalEmail($proposal);
 
         return $proposal;
     }
@@ -98,7 +100,7 @@ class ProposalSchedulingService
                 'staff_member_id' => $assignment['staff_id'] ?? null,
             ]);
 
-            SendProposalEmailJob::dispatch($proposal);
+            SandboxJobDispatcher::dispatchProposalEmail($proposal);
 
             return $proposal;
         });
@@ -164,7 +166,7 @@ class ProposalSchedulingService
             );
         }
 
-        \App\Jobs\ProcessNegotiationJob::dispatch($negotiation);
+        SandboxJobDispatcher::dispatchNegotiation($negotiation);
 
         return $negotiation->fresh();
     }
@@ -173,7 +175,7 @@ class ProposalSchedulingService
     {
         $appointment->update(['status' => AppointmentStatus::Negotiation]);
 
-        return AppointmentNegotiation::create([
+        $negotiation = AppointmentNegotiation::create([
             'appointment_id' => $appointment->id,
             'round' => $appointment->negotiation_round + 1,
             'customer_feedback' => $summary,
@@ -181,6 +183,23 @@ class ProposalSchedulingService
             'status' => NegotiationStatus::Escalated,
             'processed_at' => now(),
         ]);
+
+        if ($appointment->company->isSandbox()) {
+            $run = SchedulingSandboxRun::query()
+                ->where('company_id', $appointment->company_id)
+                ->latest()
+                ->first();
+
+            if ($run) {
+                app(SchedulingSandboxMailRecorder::class)->recordEscalation(
+                    $run,
+                    $appointment,
+                    $negotiation->ai_summary ?? $summary,
+                );
+            }
+        }
+
+        return $negotiation;
     }
 
     public function buildWhatsAppSummary(Appointment $appointment, string $context): string
