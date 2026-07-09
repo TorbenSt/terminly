@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\StaffMember;
 use App\Services\AvailabilityService;
 use App\Services\ClusteringService;
+use App\Services\SchedulingSandbox\SandboxContext;
 use Carbon\Carbon;
 use GrokPHP\Client\Config\ChatOptions;
 use GrokPHP\Client\Exceptions\GrokException;
@@ -31,7 +32,7 @@ class GrokSchedulerService
     {
         $context = $this->buildContext($company, $negotiationAppointment);
 
-        if (empty(config('grok.api_key'))) {
+        if (empty(config('grok.api_key')) || SandboxContext::shouldForceFallback()) {
             return $this->fallbackSchedule($context);
         }
 

@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureCompanySubscribed;
 use App\Http\Middleware\EnsureProspectSearchEnabled;
+use App\Http\Middleware\EnsureSchedulingLabEnabled;
 use App\Http\Middleware\EnsureUserHasCompany;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'company' => EnsureUserHasCompany::class,
             'subscribed' => EnsureCompanySubscribed::class,
             'prospect_search' => EnsureProspectSearchEnabled::class,
+            'scheduling_lab' => EnsureSchedulingLabEnabled::class,
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,

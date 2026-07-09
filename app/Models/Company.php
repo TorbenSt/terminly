@@ -21,6 +21,9 @@ class Company extends Model
         'phone',
         'timezone',
         'is_active',
+        'is_sandbox',
+        'sandbox_source_company_id',
+        'sandbox_snapshot_at',
         'plan_id',
         'billing_exempt',
         'trial_ends_at',
@@ -34,6 +37,8 @@ class Company extends Model
     {
         return [
             'is_active' => 'boolean',
+            'is_sandbox' => 'boolean',
+            'sandbox_snapshot_at' => 'datetime',
             'billing_exempt' => 'boolean',
             'trial_ends_at' => 'datetime',
             'staff_limit_override' => 'integer',
@@ -149,5 +154,15 @@ class Company extends Model
         }
 
         return $this->hasProspectSearchAddon();
+    }
+
+    public function sandboxSourceCompany(): BelongsTo
+    {
+        return $this->belongsTo(Company::class, 'sandbox_source_company_id');
+    }
+
+    public function isSandbox(): bool
+    {
+        return (bool) $this->is_sandbox;
     }
 }

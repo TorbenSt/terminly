@@ -2,7 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AppointmentListItem } from '@/types/models';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 
 interface Props {
     stats: {
@@ -18,6 +18,8 @@ interface Props {
 }
 
 export default function Dashboard({ stats, recentAppointments = [] }: Props) {
+    const schedulingLab = usePage().props.schedulingLab as { enabled?: boolean } | undefined;
+
     if (stats.mode === 'super_admin') {
         return (
             <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Super Admin</h2>}>
@@ -26,9 +28,16 @@ export default function Dashboard({ stats, recentAppointments = [] }: Props) {
                     <Card className="mx-auto max-w-xl">
                         <CardContent className="pt-6">
                             <p className="mb-4 text-muted-foreground">Als Super-Admin verwalten Sie Unternehmen.</p>
-                            <Link href={route('admin.companies.index')} className="text-primary underline">
-                                Unternehmen verwalten →
-                            </Link>
+                            <div className="flex flex-col gap-2">
+                                <Link href={route('admin.companies.index')} className="text-primary underline">
+                                    Unternehmen verwalten →
+                                </Link>
+                                {schedulingLab?.enabled && (
+                                    <Link href={route('admin.scheduling-lab.index')} className="text-primary underline">
+                                        Scheduling Lab öffnen →
+                                    </Link>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
                 </div>

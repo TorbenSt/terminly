@@ -203,7 +203,9 @@ Implementiert auf Branch `feature/stripe-billing`. Billable-Entity: `Company` (L
 | `SendProposalEmailJob` | E-Mail mit Proposal-Link |
 | `SyncCompanyUsageJob` | Stripe-Überschreitungsmengen synchronisieren |
 | `appointments:schedule-due` | Täglich 06:00 — fällige Services planen |
+| `scheduling-lab:purge` | Wöchentlich — alte Sandbox-Snapshots löschen (Retention konfigurierbar) |
 | **Horizon** | `/horizon` — Queue-Monitoring (nur Super-Admin) |
+| **Scheduling Lab** | `/admin/scheduling-lab` — Super-Admin Testbereich für KI-Terminvorschläge (Feature-Flag `SCHEDULING_LAB_ENABLED`) |
 
 **Lokal:** `docker compose up -d` (Postgres + Redis), `php artisan migrate --seed`, `npm run dev`.
 
@@ -218,6 +220,7 @@ Implementiert auf Branch `feature/stripe-billing`. Billable-Entity: `Company` (L
 | `/admin/companies` | Firmen verwalten (Abo, Trial, Limits, Befreiung) |
 | `/admin/plans` | Abos CRUD + Standard-Testzeitraum |
 | `/admin/coupons` | Gutscheine & Promo-Codes |
+| `/admin/scheduling-lab` | Scheduling Lab (Szenarien + Firmen-Snapshot, Test-Posteingang) |
 
 ### Firmen-Nutzer (`auth`, `company`, `subscribed`)
 

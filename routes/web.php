@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\BillingSettingsController;
 use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\CouponController;
 use App\Http\Controllers\Admin\PlanController;
+use App\Http\Controllers\Admin\SchedulingLabController;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\Billing\SubscriptionController;
 use App\Http\Controllers\CustomerController;
@@ -88,6 +89,14 @@ Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')
     Route::patch('/promotion-codes/{promotionCodeId}/deactivate', [CouponController::class, 'deactivateCode'])->name('promotion-codes.deactivate');
 
     Route::patch('/billing-settings', [BillingSettingsController::class, 'update'])->name('billing-settings.update');
+
+    Route::middleware('scheduling_lab')->prefix('scheduling-lab')->name('scheduling-lab.')->group(function () {
+        Route::get('/', [SchedulingLabController::class, 'index'])->name('index');
+        Route::post('/scenario', [SchedulingLabController::class, 'setupScenario'])->name('scenario');
+        Route::post('/snapshot', [SchedulingLabController::class, 'setupCompanySnapshot'])->name('snapshot');
+        Route::post('/run', [SchedulingLabController::class, 'runScheduling'])->name('run');
+        Route::post('/reset', [SchedulingLabController::class, 'reset'])->name('reset');
+    });
 });
 
 Route::prefix('p')->name('public.')->group(function () {
