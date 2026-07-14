@@ -24,6 +24,7 @@ class NegotiationController extends Controller
                 'round' => $negotiation->round,
                 'service_name' => $negotiation->appointment->serviceType->name,
             ],
+            'schedulingLab' => request()->boolean('scheduling_lab'),
         ]);
     }
 

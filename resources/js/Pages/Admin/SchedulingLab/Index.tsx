@@ -3,9 +3,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { withSchedulingLabParam, isSchedulingLabPublicUrl, SCHEDULING_LAB_COMPLETE_EVENT } from '@/lib/scheduling-lab-return';
 import { PageProps } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface ScenarioOption {
     value: string;
@@ -78,6 +79,62 @@ export default function Index({
     const [mode, setMode] = useState<'scenario' | 'company'>('scenario');
     const [selectedMessage, setSelectedMessage] = useState<SandboxMessage | null>(run?.messages[0] ?? null);
     const [customerPreviewUrl, setCustomerPreviewUrl] = useState<string | null>(null);
+    const emailBodyRef = useRef<HTMLDivElement>(null);
+
+    const closeCustomerView = useCallback(() => {
+        setCustomerPreviewUrl(null);
+    }, []);
+
+    const openCustomerView = useCallback((url: string) => {
+        setSelectedMessage(null);
+        setCustomerPreviewUrl(withSchedulingLabParam(url));
+    }, []);
+
+    useEffect(() => {
+        const handleLabComplete = (event: MessageEvent) => {
+            if (event.origin !== window.location.origin) {
+                return;
+            }
+
+            if (event.data?.type !== SCHEDULING_LAB_COMPLETE_EVENT) {
+                return;
+            }
+
+            closeCustomerView();
+            setSelectedMessage(null);
+            router.reload({ only: ['run', 'inspector'] });
+        };
+
+        window.addEventListener('message', handleLabComplete);
+
+        return () => window.removeEventListener('message', handleLabComplete);
+    }, [closeCustomerView]);
+
+    useEffect(() => {
+        const container = emailBodyRef.current;
+        if (!container) {
+            return;
+        }
+
+        const handleEmailLinkClick = (event: MouseEvent) => {
+            const target = (event.target as HTMLElement).closest('a');
+            if (!target?.href) {
+                return;
+            }
+
+            if (!isSchedulingLabPublicUrl(target.href)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            openCustomerView(target.href);
+        };
+
+        container.addEventListener('click', handleEmailLinkClick);
+
+        return () => container.removeEventListener('click', handleEmailLinkClick);
+    }, [selectedMessage, openCustomerView]);
 
     const scenarioForm = useForm({
         scenario: scenarios[0]?.value ?? 'simple_maintenance',
@@ -101,8 +158,9 @@ export default function Index({
         snapshotForm.post(route('admin.scheduling-lab.snapshot'));
     };
 
-    const openCustomerView = (url: string) => {
-        setCustomerPreviewUrl(url);
+    const selectMessage = (message: SandboxMessage) => {
+        closeCustomerView();
+        setSelectedMessage(message);
     };
 
     return (
@@ -289,7 +347,7 @@ export default function Index({
                                 <button
                                     key={message.id}
                                     type="button"
-                                    onClick={() => setSelectedMessage(message)}
+                                    onClick={() => selectMessage(message)}
                                     className={`w-full rounded-lg border p-3 text-left text-sm transition ${
                                         selectedMessage?.id === message.id
                                             ? 'border-primary bg-primary/5'
@@ -304,10 +362,11 @@ export default function Index({
                                 </button>
                             ))}
 
-                            {selectedMessage && (
+                            {selectedMessage && !customerPreviewUrl && (
                                 <div className="space-y-3 border-t pt-3">
                                     <div
-                                        className="prose prose-sm max-w-none rounded-md border bg-white p-3"
+                                        ref={emailBodyRef}
+                                        className="prose prose-sm max-w-none rounded-md border bg-white p-3 [&_a]:cursor-pointer"
                                         dangerouslySetInnerHTML={{ __html: selectedMessage.body_html }}
                                     />
                                     {selectedMessage.meta?.public_url && (
@@ -387,7 +446,7 @@ export default function Index({
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Kunden-Ansicht</CardTitle>
-                            <Button variant="ghost" size="sm" onClick={() => setCustomerPreviewUrl(null)}>
+                            <Button variant="ghost" size="sm" onClick={closeCustomerView}>
                                 Schließen
                             </Button>
                         </CardHeader>

@@ -26,10 +26,12 @@ class ProposalResponseController extends Controller
                     'number' => $key,
                     'label' => $slot->timezone(config('app.timezone'))->format('d.m.Y H:i'),
                     'iso' => $slot->toIso8601String(),
+                    'recommended' => $proposal->round > 1 && $key === ($proposal->recommended_option ?? 1),
                 ])->values(),
                 'service_name' => $proposal->appointment->serviceType->name,
                 'duration_minutes' => $proposal->appointment->duration_minutes,
             ],
+            'schedulingLab' => request()->boolean('scheduling_lab'),
         ]);
     }
 
@@ -43,20 +45,35 @@ class ProposalResponseController extends Controller
 
         $service->acceptProposal($proposal, (int) $validated['option']);
 
-        return redirect()->route('public.proposals.show', $token)
+        $params = ['token' => $token];
+        if ($request->boolean('scheduling_lab')) {
+            $params['scheduling_lab'] = 1;
+        }
+
+        return redirect()->route('public.proposals.show', $params)
             ->with('success', 'Termin bestätigt. Vielen Dank!');
     }
 
-    public function reject(string $token, ProposalSchedulingService $service): RedirectResponse
+    public function reject(Request $request, string $token, ProposalSchedulingService $service): RedirectResponse
     {
         $proposal = AppointmentProposal::where('token', $token)->firstOrFail();
         $negotiation = $service->rejectAllOptions($proposal);
 
         if ($negotiation->status->value === 'escalated') {
-            return redirect()->route('public.proposals.show', $token)
+            $params = ['token' => $token];
+            if ($request->boolean('scheduling_lab')) {
+                $params['scheduling_lab'] = 1;
+            }
+
+            return redirect()->route('public.proposals.show', $params)
                 ->with('success', 'Wir melden uns persönlich bei Ihnen.');
         }
 
-        return redirect()->route('public.negotiations.show', $negotiation->token);
+        $params = ['token' => $negotiation->token];
+        if ($request->boolean('scheduling_lab')) {
+            $params['scheduling_lab'] = 1;
+        }
+
+        return redirect()->route('public.negotiations.show', $params);
     }
 }

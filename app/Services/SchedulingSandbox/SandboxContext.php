@@ -2,6 +2,7 @@
 
 namespace App\Services\SchedulingSandbox;
 
+use App\Models\Company;
 use App\Models\SchedulingSandboxRun;
 
 class SandboxContext
@@ -18,10 +19,22 @@ class SandboxContext
         return self::$run;
     }
 
-    public static function shouldForceFallback(): bool
+    public static function shouldForceFallback(?Company $company = null): bool
     {
-        $run = self::$run;
+        $run = self::$run ?? self::latestRunForCompany($company);
 
         return $run !== null && ! $run->use_grok_live;
+    }
+
+    private static function latestRunForCompany(?Company $company): ?SchedulingSandboxRun
+    {
+        if ($company === null || ! $company->isSandbox()) {
+            return null;
+        }
+
+        return SchedulingSandboxRun::query()
+            ->where('company_id', $company->id)
+            ->latest()
+            ->first();
     }
 }
