@@ -66,6 +66,42 @@ class SlotCuratorServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_honors_earliest_date_and_afternoon_hour_constraint(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'Europe/Berlin'));
+
+        $staff = StaffMember::factory()->create(['buffer_minutes' => 0]);
+
+        foreach (range(Carbon::MONDAY, Carbon::FRIDAY) as $dayOfWeek) {
+            StaffAvailability::factory()->create([
+                'staff_member_id' => $staff->id,
+                'day_of_week' => $dayOfWeek,
+                'start_time' => '08:00:00',
+                'end_time' => '18:00:00',
+            ]);
+        }
+
+        $result = app(SlotCuratorService::class)->curate(
+            $staff,
+            'Bitte erst ab dem ersten August nachmittags ab 15 Uhr',
+            60,
+        );
+
+        $this->assertCount(3, $result['slots']);
+
+        $earliestAllowed = Carbon::parse('2026-08-01 15:00:00', 'Europe/Berlin');
+
+        foreach ($result['slots'] as $iso) {
+            $slot = Carbon::parse($iso);
+            $this->assertTrue(
+                $slot->gte($earliestAllowed),
+                "Slot {$slot->toDateTimeString()} violates earliest date/time constraint",
+            );
+        }
+
+        Carbon::setTestNow();
+    }
+
     /**
      * @param  Collection<int, Carbon>  $slots
      */
