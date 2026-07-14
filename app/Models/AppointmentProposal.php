@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\NegotiationStatus;
 use Database\Factories\AppointmentProposalFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class AppointmentProposal extends Model
@@ -19,6 +21,7 @@ class AppointmentProposal extends Model
         'option_1_at',
         'option_2_at',
         'option_3_at',
+        'recommended_option',
         'staff_member_id',
         'selected_option',
         'token',
@@ -57,7 +60,7 @@ class AppointmentProposal extends Model
     }
 
     /**
-     * @return array<int, \Illuminate\Support\Carbon>
+     * @return array<int, Carbon>
      */
     public function options(): array
     {
@@ -66,5 +69,20 @@ class AppointmentProposal extends Model
             2 => $this->option_2_at,
             3 => $this->option_3_at,
         ];
+    }
+
+    public function negotiationFeedback(): ?string
+    {
+        if ($this->round <= 1) {
+            return null;
+        }
+
+        $feedback = $this->appointment
+            ?->negotiations()
+            ->where('round', $this->round - 1)
+            ->where('status', NegotiationStatus::Processed)
+            ->value('customer_feedback');
+
+        return filled($feedback) ? $feedback : null;
     }
 }

@@ -2,8 +2,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { completeSchedulingLabFlow } from '@/lib/scheduling-lab-return';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { FormEvent } from 'react';
+import { FormEvent, useEffect } from 'react';
 
 interface Props {
     negotiation: {
@@ -11,18 +12,28 @@ interface Props {
         round: number;
         service_name: string;
     };
+    schedulingLab?: boolean;
 }
 
-export default function NegotiationForm({ negotiation }: Props) {
+export default function NegotiationForm({ negotiation, schedulingLab = false }: Props) {
     const { flash } = usePage().props as { flash?: { success?: string } };
     const { data, setData, post, processing, errors } = useForm({
         feedback: '',
         request_manual_contact: false,
+        scheduling_lab: schedulingLab,
     });
+
+    useEffect(() => {
+        if (flash?.success && schedulingLab) {
+            completeSchedulingLabFlow(true);
+        }
+    }, [flash?.success, schedulingLab]);
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
-        post(route('public.negotiations.store', negotiation.token));
+        post(route('public.negotiations.store', negotiation.token), {
+            onSuccess: () => completeSchedulingLabFlow(schedulingLab),
+        });
     };
 
     return (
@@ -37,8 +48,13 @@ export default function NegotiationForm({ negotiation }: Props) {
                         </p>
                     </CardHeader>
                     <CardContent>
-                        {flash?.success && (
+                        {flash?.success && !schedulingLab && (
                             <p className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-800">{flash.success}</p>
+                        )}
+                        {schedulingLab && (
+                            <p className="mb-4 rounded-md bg-teal-50 p-3 text-sm text-teal-800">
+                                Testmodus: Nach dem Absenden kehren Sie zum Scheduling Lab zurück.
+                            </p>
                         )}
                         <form onSubmit={submit} className="space-y-4">
                             <div>

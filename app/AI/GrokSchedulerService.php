@@ -7,10 +7,12 @@ use App\DTOs\SchedulingContext;
 use App\Models\Appointment;
 use App\Models\AppointmentNegotiation;
 use App\Models\Company;
+use App\Models\RecurringService;
 use App\Models\StaffMember;
 use App\Services\AvailabilityService;
 use App\Services\ClusteringService;
 use App\Services\SchedulingSandbox\SandboxContext;
+use App\Services\SlotCuratorService;
 use Carbon\Carbon;
 use GrokPHP\Client\Config\ChatOptions;
 use GrokPHP\Client\Exceptions\GrokException;
@@ -23,6 +25,7 @@ class GrokSchedulerService
     public function __construct(
         private readonly ClusteringService $clusteringService,
         private readonly AvailabilityService $availabilityService,
+        private readonly SlotCuratorService $slotCurator,
     ) {}
 
     /**
@@ -32,8 +35,11 @@ class GrokSchedulerService
     {
         $context = $this->buildContext($company, $negotiationAppointment);
 
-        if (empty(config('grok.api_key')) || SandboxContext::shouldForceFallback()) {
-            return $this->fallbackSchedule($context);
+        if (empty(config('grok.api_key')) || SandboxContext::shouldForceFallback($company)) {
+            return $this->applyNegotiationCuration(
+                $this->fallbackSchedule($context),
+                $context,
+            );
         }
 
         try {
@@ -47,11 +53,17 @@ class GrokSchedulerService
 
             $parsed = json_decode($response->content(), true, 512, JSON_THROW_ON_ERROR);
 
-            return collect($parsed['assignments'] ?? []);
+            return $this->applyNegotiationCuration(
+                collect($parsed['assignments'] ?? []),
+                $context,
+            );
         } catch (GrokException|\JsonException $e) {
             Log::warning('Grok scheduling failed, using fallback', ['error' => $e->getMessage()]);
 
-            return $this->fallbackSchedule($context);
+            return $this->applyNegotiationCuration(
+                $this->fallbackSchedule($context),
+                $context,
+            );
         }
     }
 
@@ -117,8 +129,9 @@ class GrokSchedulerService
             $query->where('appointment_id', $appointment->id);
         }
 
-        return $query->get()->map(fn (AppointmentNegotiation $n) => [
+        return $query->with('appointment')->get()->map(fn (AppointmentNegotiation $n) => [
             'appointment_id' => $n->appointment_id,
+            'customer_id' => $n->appointment->customer_id,
             'round' => $n->round,
             'feedback' => $n->customer_feedback,
         ]);
@@ -132,6 +145,7 @@ class GrokSchedulerService
     private function fallbackSchedule(SchedulingContext $context): Collection
     {
         $assignments = collect();
+        $feedbackByCustomer = $context->negotiationFeedback->keyBy('customer_id');
 
         foreach ($context->clusters as $cluster) {
             $jobs = collect($cluster['jobs'] ?? []);
@@ -146,22 +160,118 @@ class GrokSchedulerService
             $base = Carbon::parse($suggestedDate)->setTime(9, 0);
 
             foreach ($jobs as $job) {
-                $assignments->push([
-                    'recurring_id' => $job['recurring_id'],
-                    'customer_id' => $job['customer_id'],
-                    'staff_id' => $staffId,
-                    'suggested_date' => $suggestedDate,
-                    'slots' => [
+                $customerId = $job['customer_id'];
+                $feedback = $feedbackByCustomer->get($customerId);
+                $durationMinutes = $job['duration_min'] ?? 60;
+
+                if ($feedback && filled($feedback['feedback'] ?? null)) {
+                    $curated = $this->curateNegotiationSlots(
+                        $staffId,
+                        $feedback['feedback'],
+                        $durationMinutes,
+                    );
+                    $slots = $curated['slots'];
+                    $recommendedOption = $curated['recommended_option'];
+                } else {
+                    $slots = [
                         $base->copy()->toIso8601String(),
                         $base->copy()->addHours(2)->toIso8601String(),
                         $base->copy()->addDay()->setTime(14, 0)->toIso8601String(),
-                    ],
-                ]);
+                    ];
+                    $recommendedOption = null;
+                    $base->addHours(3);
+                }
 
-                $base->addHours(3);
+                $assignments->push([
+                    'recurring_id' => $job['recurring_id'],
+                    'customer_id' => $customerId,
+                    'staff_id' => $staffId,
+                    'suggested_date' => Carbon::parse($slots[0])->toDateString(),
+                    'slots' => $slots,
+                    'recommended_option' => $recommendedOption,
+                ]);
             }
         }
 
         return $assignments;
+    }
+
+    /**
+     * @return array{slots: list<string>, recommended_option: int}
+     */
+    private function curateNegotiationSlots(int $staffId, string $feedback, int $durationMinutes): array
+    {
+        $staff = StaffMember::find($staffId);
+
+        if (! $staff) {
+            return [
+                'slots' => [
+                    now()->addWeek()->setTime(9, 0)->toIso8601String(),
+                    now()->addWeek()->setTime(11, 0)->toIso8601String(),
+                    now()->addWeeks(2)->setTime(9, 0)->toIso8601String(),
+                ],
+                'recommended_option' => 1,
+            ];
+        }
+
+        $curated = $this->slotCurator->curate($staff, $feedback, $durationMinutes);
+
+        return [
+            'slots' => $curated['slots'],
+            'recommended_option' => $curated['recommended_index'] + 1,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $assignments
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function applyNegotiationCuration(Collection $assignments, SchedulingContext $context): Collection
+    {
+        $feedbackByCustomer = $context->negotiationFeedback->keyBy('customer_id');
+
+        return $assignments->map(function (array $assignment) use ($feedbackByCustomer) {
+            $customerId = $assignment['customer_id'] ?? null;
+            $feedback = $customerId ? $feedbackByCustomer->get($customerId) : null;
+
+            if (! $feedback || blank($feedback['feedback'] ?? null)) {
+                return $assignment;
+            }
+
+            $staff = StaffMember::find($assignment['staff_id'] ?? null);
+            if (! $staff) {
+                return $assignment;
+            }
+
+            $durationMinutes = $this->resolveDurationMinutes($assignment);
+            $curated = $this->slotCurator->curateFromIsoSlots(
+                $staff,
+                $assignment['slots'] ?? [],
+                $feedback['feedback'],
+                $durationMinutes,
+            );
+
+            $assignment['slots'] = $curated['slots'];
+            $assignment['recommended_option'] = $curated['recommended_index'] + 1;
+            $assignment['suggested_date'] = Carbon::parse($curated['slots'][0])->toDateString();
+
+            return $assignment;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $assignment
+     */
+    private function resolveDurationMinutes(array $assignment): int
+    {
+        if (isset($assignment['recurring_id'])) {
+            $recurring = RecurringService::find($assignment['recurring_id']);
+
+            if ($recurring?->serviceType) {
+                return $recurring->serviceType->duration_minutes;
+            }
+        }
+
+        return 60;
     }
 }

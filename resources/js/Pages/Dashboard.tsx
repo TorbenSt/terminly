@@ -21,25 +21,61 @@ export default function Dashboard({ stats, recentAppointments = [] }: Props) {
     const schedulingLab = usePage().props.schedulingLab as { enabled?: boolean } | undefined;
 
     if (stats.mode === 'super_admin') {
+        const adminCards = [
+            {
+                label: 'Unternehmen',
+                description: 'Firmen, Abos, Trials und Limits verwalten',
+                href: route('admin.companies.index'),
+            },
+            {
+                label: 'Abos',
+                description: 'Pläne und Preise konfigurieren',
+                href: route('admin.plans.index'),
+            },
+            {
+                label: 'Gutscheine',
+                description: 'Coupons und Promo-Codes verwalten',
+                href: route('admin.coupons.index'),
+            },
+            {
+                label: 'Scheduling Lab',
+                description: schedulingLab?.enabled
+                    ? 'KI-Terminvorschläge mit Szenarien und Firmen-Snapshots testen'
+                    : 'Aktivieren Sie SCHEDULING_LAB_ENABLED in der .env',
+                href: route('admin.scheduling-lab.index'),
+                disabled: !schedulingLab?.enabled,
+            },
+        ];
+
         return (
             <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Super Admin</h2>}>
                 <Head title="Dashboard" />
                 <div className="space-y-6">
-                    <Card className="mx-auto max-w-xl">
-                        <CardContent className="pt-6">
-                            <p className="mb-4 text-muted-foreground">Als Super-Admin verwalten Sie Unternehmen.</p>
-                            <div className="flex flex-col gap-2">
-                                <Link href={route('admin.companies.index')} className="text-primary underline">
-                                    Unternehmen verwalten →
-                                </Link>
-                                {schedulingLab?.enabled && (
-                                    <Link href={route('admin.scheduling-lab.index')} className="text-primary underline">
-                                        Scheduling Lab öffnen →
-                                    </Link>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <p className="text-muted-foreground">
+                        Willkommen im Super-Admin-Bereich. Wählen Sie einen Bereich:
+                    </p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {adminCards.map((card) => (
+                            <Card
+                                key={card.label}
+                                className={card.disabled ? 'opacity-60' : 'transition-shadow hover:shadow-md'}
+                            >
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base">{card.label}</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="mb-3 text-sm text-muted-foreground">{card.description}</p>
+                                    {card.disabled ? (
+                                        <span className="text-sm text-muted-foreground">Nicht aktiviert</span>
+                                    ) : (
+                                        <Link href={card.href} className="text-sm font-medium text-primary underline">
+                                            Öffnen →
+                                        </Link>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
                 </div>
             </AuthenticatedLayout>
         );

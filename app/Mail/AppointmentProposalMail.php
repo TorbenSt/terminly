@@ -26,12 +26,15 @@ class AppointmentProposalMail extends Mailable
 
     public function content(): Content
     {
+        $proposal = $this->proposal->loadMissing('appointment.negotiations');
+
         return new Content(
             markdown: 'emails.appointment-proposal',
             with: [
-                'proposal' => $this->proposal,
-                'appointment' => $this->proposal->appointment,
-                'responseUrl' => route('public.proposals.show', $this->proposal->token),
+                'proposal' => $proposal,
+                'appointment' => $proposal->appointment,
+                'responseUrl' => route('public.proposals.show', $proposal->token),
+                'negotiationFeedback' => $proposal->negotiationFeedback(),
             ],
         );
     }

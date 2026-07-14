@@ -35,6 +35,14 @@ Rules for slots:
 - Each slot must fit within the assigned staff member's availability and service duration.
 - Leave at least buffer_minutes between consecutive appointments for the same staff.
 - Prefer morning slots for industrial clients when no preference is stated.
+
+Negotiation rounds (when negotiation_feedback is present):
+- Option 1 must best match the customer's stated feedback (day, time window, week).
+- Options 2 and 3 must be meaningfully different from Option 1 — not merely adjacent 15-minute increments on the same day.
+- Never offer three consecutive 15-minute slots on the same day.
+- If the preferred day is fully booked, prefer the same weekday in the following week before switching to a different weekday.
+- When the customer names a specific weekday and time window (e.g. "Montag vormittag"), spread options across at least two calendar days where possible.
+- The reasoning field must briefly explain in German how customer feedback was honored.
 PROMPT;
     }
 }

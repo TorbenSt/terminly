@@ -5,14 +5,14 @@ namespace App\Services;
 use App\AI\GrokSchedulerService;
 use App\Enums\AppointmentStatus;
 use App\Enums\NegotiationStatus;
-use App\Models\SchedulingSandboxRun;
-use App\Services\SchedulingSandbox\SchedulingSandboxMailRecorder;
-use App\Services\SchedulingSandbox\SandboxJobDispatcher;
 use App\Models\Appointment;
 use App\Models\AppointmentNegotiation;
 use App\Models\AppointmentProposal;
 use App\Models\Company;
 use App\Models\RecurringService;
+use App\Models\SchedulingSandboxRun;
+use App\Services\SchedulingSandbox\SandboxJobDispatcher;
+use App\Services\SchedulingSandbox\SchedulingSandboxMailRecorder;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -50,10 +50,7 @@ class ProposalSchedulingService
             'processed_at' => now(),
         ]);
 
-        $proposal = $this->createProposalFromAssignment($appointment->company, $assignment, $appointment);
-        SandboxJobDispatcher::dispatchProposalEmail($proposal);
-
-        return $proposal;
+        return $this->createProposalFromAssignment($appointment->company, $assignment, $appointment);
     }
 
     public function createProposalFromAssignment(
@@ -97,6 +94,7 @@ class ProposalSchedulingService
                 'option_1_at' => Carbon::parse($slots[0] ?? now()->addDay()),
                 'option_2_at' => Carbon::parse($slots[1] ?? now()->addDays(2)),
                 'option_3_at' => Carbon::parse($slots[2] ?? now()->addDays(3)),
+                'recommended_option' => $assignment['recommended_option'] ?? null,
                 'staff_member_id' => $assignment['staff_id'] ?? null,
             ]);
 
