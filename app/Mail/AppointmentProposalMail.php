@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\AppointmentProposal;
+use App\Services\ArrivalWindowService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -26,13 +27,27 @@ class AppointmentProposalMail extends Mailable
 
     public function content(): Content
     {
-        $proposal = $this->proposal->loadMissing('appointment.negotiations');
+        $proposal = $this->proposal->loadMissing(['appointment.negotiations', 'appointment.company', 'staffMember']);
+        $formatter = app(ArrivalWindowService::class);
+        $arrivalWindows = $formatter->forProposal($proposal);
+        $optionLabels = collect($proposal->options())->mapWithKeys(function ($slot, $number) use ($arrivalWindows, $formatter, $proposal) {
+            if (! $slot) {
+                return [];
+            }
+
+            $label = isset($arrivalWindows[$number])
+                ? $formatter->formatLabel($arrivalWindows[$number], $proposal->appointment->company)
+                : $slot->timezone($proposal->appointment->company->timezone)->format('d.m.Y H:i').' Uhr';
+
+            return [$number => $label];
+        });
 
         return new Content(
             markdown: 'emails.appointment-proposal',
             with: [
                 'proposal' => $proposal,
                 'appointment' => $proposal->appointment,
+                'optionLabels' => $optionLabels,
                 'responseUrl' => route('public.proposals.show', $proposal->token),
                 'negotiationFeedback' => $proposal->negotiationFeedback(),
             ],

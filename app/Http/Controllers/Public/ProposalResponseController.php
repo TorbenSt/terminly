@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
 use App\Models\AppointmentProposal;
+use App\Services\ArrivalWindowService;
 use App\Services\ProposalSchedulingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,22 +13,31 @@ use Inertia\Response;
 
 class ProposalResponseController extends Controller
 {
-    public function show(string $token): Response
+    public function show(string $token, ArrivalWindowService $arrivalWindows): Response
     {
         $proposal = AppointmentProposal::where('token', $token)
-            ->with(['appointment.customer', 'appointment.serviceType'])
+            ->with(['appointment.customer', 'appointment.serviceType', 'appointment.company'])
             ->firstOrFail();
+
+        $company = $proposal->appointment->company;
+        $windows = $arrivalWindows->forProposal($proposal);
 
         return Inertia::render('Public/ProposalResponse', [
             'proposal' => [
                 'token' => $proposal->token,
                 'round' => $proposal->round,
-                'options' => collect($proposal->options())->map(fn ($slot, $key) => [
-                    'number' => $key,
-                    'label' => $slot->timezone(config('app.timezone'))->format('d.m.Y H:i'),
-                    'iso' => $slot->toIso8601String(),
-                    'recommended' => $proposal->round > 1 && $key === ($proposal->recommended_option ?? 1),
-                ])->values(),
+                'options' => collect($proposal->options())->map(function ($slot, $key) use ($windows, $arrivalWindows, $company, $proposal) {
+                    $recommended = $proposal->round > 1 && $key === ($proposal->recommended_option ?? 1);
+
+                    return [
+                        'number' => $key,
+                        'label' => isset($windows[$key])
+                            ? $arrivalWindows->formatLabel($windows[$key], $company)
+                            : $slot->timezone($company->timezone)->format('d.m.Y H:i'),
+                        'iso' => $slot->toIso8601String(),
+                        'recommended' => $recommended,
+                    ];
+                })->values(),
                 'service_name' => $proposal->appointment->serviceType->name,
                 'duration_minutes' => $proposal->appointment->duration_minutes,
             ],

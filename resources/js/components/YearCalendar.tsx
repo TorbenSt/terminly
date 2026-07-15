@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 interface YearCalendarProps {
     selectedDate: string;
     onSelectDate: (date: string) => void;
+    appointmentDates?: string[];
 }
 
 const WEEKDAY_HEADERS = [1, 2, 3, 4, 5, 6, 0] as const;
@@ -37,10 +38,30 @@ function getDaysInMonth(year: number, month: number): number {
     return new Date(year, month + 1, 0).getDate();
 }
 
-export default function YearCalendar({ selectedDate, onSelectDate }: YearCalendarProps) {
+function dayButtonClasses(isSelected: boolean, isToday: boolean, hasAppointments: boolean): string {
+    if (isSelected) {
+        return cn(isToday && 'ring-2 ring-teal-300 ring-offset-1');
+    }
+
+    if (hasAppointments) {
+        return cn(
+            'bg-teal-100 text-teal-900 hover:bg-teal-200',
+            isToday && 'ring-2 ring-teal-500 ring-offset-1',
+        );
+    }
+
+    return cn(isToday && 'ring-1 ring-teal-600');
+}
+
+export default function YearCalendar({
+    selectedDate,
+    onSelectDate,
+    appointmentDates = [],
+}: YearCalendarProps) {
     const selected = useMemo(() => parseDateLocal(selectedDate), [selectedDate]);
     const today = useMemo(() => toDateString(new Date()), []);
     const [displayYear, setDisplayYear] = useState(() => selected.getFullYear());
+    const appointmentDateSet = useMemo(() => new Set(appointmentDates), [appointmentDates]);
 
     useEffect(() => {
         setDisplayYear(selected.getFullYear());
@@ -72,7 +93,14 @@ export default function YearCalendar({ selectedDate, onSelectDate }: YearCalenda
                     </Button>
                 </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-3 w-3 rounded bg-teal-100 ring-1 ring-teal-200" />
+                        Termine vorhanden
+                    </span>
+                </div>
+
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {MONTH_LABELS.map((monthLabel, month) => {
                         const leadingEmpty = getMondayFirstWeekdayIndex(displayYear, month);
@@ -95,6 +123,7 @@ export default function YearCalendar({ selectedDate, onSelectDate }: YearCalenda
                                         const dateValue = toDateString(new Date(displayYear, month, day));
                                         const isSelected = dateValue === selectedDate;
                                         const isToday = dateValue === today;
+                                        const hasAppointments = appointmentDateSet.has(dateValue);
 
                                         return (
                                             <Button
@@ -104,7 +133,7 @@ export default function YearCalendar({ selectedDate, onSelectDate }: YearCalenda
                                                 size="sm"
                                                 className={cn(
                                                     'h-7 w-full min-w-0 px-0 text-xs font-normal',
-                                                    !isSelected && isToday && 'ring-1 ring-primary',
+                                                    dayButtonClasses(isSelected, isToday, hasAppointments),
                                                 )}
                                                 aria-pressed={isSelected}
                                                 aria-label={parseDateLocal(dateValue).toLocaleDateString('de-DE', {

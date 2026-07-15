@@ -13,8 +13,10 @@ use Inertia\Response;
 
 class StaffCalendarController extends Controller
 {
-    public function __invoke(Request $request, AvailabilityService $availabilityService): Response
-    {
+    public function __invoke(
+        Request $request,
+        AvailabilityService $availabilityService,
+    ): Response {
         $user = $request->user();
         $staffMember = StaffMember::where('user_id', $user->id)->first()
             ?? StaffMember::where('company_id', $user->company_id)->first();
@@ -43,8 +45,19 @@ class StaffCalendarController extends Controller
                 'time' => $a->scheduled_at?->format('H:i'),
             ]);
 
+        $appointmentDates = Appointment::query()
+            ->where('staff_member_id', $staffMember->id)
+            ->whereNotNull('scheduled_at')
+            ->whereIn('status', [AppointmentStatus::Confirmed, AppointmentStatus::Proposed])
+            ->pluck('scheduled_at')
+            ->map(fn ($scheduledAt) => Carbon::parse($scheduledAt)->toDateString())
+            ->unique()
+            ->values()
+            ->all();
+
         return Inertia::render('Staff/Calendar', [
             'date' => $date->toDateString(),
+            'appointmentDates' => $appointmentDates,
             'staffMember' => ['id' => $staffMember->id, 'name' => $staffMember->name],
             'slots' => $slots,
             'appointments' => $appointments,

@@ -6,7 +6,7 @@ enum SchedulingSandboxScenario: string
 {
     case SimpleMaintenance = 'simple_maintenance';
     case RegionalTwoStaff = 'regional_two_staff';
-    case BusyCalendar = 'busy_calendar';
+    case RegionalTour = 'regional_tour';
     case StaffQualification = 'staff_qualification';
     case GrokFallback = 'grok_fallback';
 
@@ -15,7 +15,7 @@ enum SchedulingSandboxScenario: string
         return match ($this) {
             self::SimpleMaintenance => 'Einfach: eine fällige Wartung',
             self::RegionalTwoStaff => 'Region: zwei Techniker, zwei PLZ-Cluster',
-            self::BusyCalendar => 'Voller Kalender',
+            self::RegionalTour => 'Regionale Tour',
             self::StaffQualification => 'Nur qualifizierter Mitarbeiter',
             self::GrokFallback => 'Einfach (nur Fallback, kein Grok)',
         };
@@ -26,7 +26,7 @@ enum SchedulingSandboxScenario: string
         return match ($this) {
             self::SimpleMaintenance => '1 Mitarbeiter, 1 fälliger Kunde, leerer Kalender.',
             self::RegionalTwoStaff => '2 Techniker in verschiedenen PLZ-Regionen, 4 fällige Kunden.',
-            self::BusyCalendar => '1 Mitarbeiter mit blockierten Terminen, 1 fälliger Kunde.',
+            self::RegionalTour => 'Bestehende PLZ-Tour (Berlin/Hamburg), neuer Kunde in gleicher Region.',
             self::StaffQualification => '2 Mitarbeiter mit unterschiedlichen Qualifikationen.',
             self::GrokFallback => 'Wie „Einfach“, erzwingt den deterministischen Fallback-Scheduler.',
         };

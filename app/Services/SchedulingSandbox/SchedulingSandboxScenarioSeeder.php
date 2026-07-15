@@ -21,7 +21,7 @@ class SchedulingSandboxScenarioSeeder
             SchedulingSandboxScenario::SimpleMaintenance,
             SchedulingSandboxScenario::GrokFallback => $this->seedSimpleMaintenance($company),
             SchedulingSandboxScenario::RegionalTwoStaff => $this->seedRegionalTwoStaff($company),
-            SchedulingSandboxScenario::BusyCalendar => $this->seedBusyCalendar($company),
+            SchedulingSandboxScenario::RegionalTour => $this->seedRegionalTour($company),
             SchedulingSandboxScenario::StaffQualification => $this->seedStaffQualification($company),
         };
     }
@@ -83,37 +83,64 @@ class SchedulingSandboxScenarioSeeder
     /**
      * @return array<string, int>
      */
-    private function seedBusyCalendar(Company $company): array
+    private function seedRegionalTour(Company $company): array
     {
         $maintenance = $this->createServiceType($company, 'Wartung', 45, true, 7);
         $staff = $this->createStaff($company, 'Max Techniker', [$maintenance->id]);
         $this->weekdayAvailability($staff);
 
-        $customer = $this->createCustomer($company, '10115');
-        $this->createDueRecurring($company, $customer, $maintenance);
+        $tuesday = now()->addWeek()->startOfDay();
+        while ($tuesday->dayOfWeek !== Carbon::TUESDAY) {
+            $tuesday->addDay();
+        }
+        $wednesday = $tuesday->copy()->addDay();
 
-        $confirmed = 0;
-        foreach (range(1, 3) as $dayOffset) {
-            $date = now()->addWeekdays($dayOffset)->setTime(9, 0);
-            $blockCustomer = $this->createCustomer($company, '10117');
+        $berlinTour = [
+            ['time' => '09:00', 'plz' => '10115'],
+            ['time' => '13:00', 'plz' => '10119'],
+        ];
+
+        foreach ($berlinTour as $stop) {
+            $customer = $this->createCustomer($company, $stop['plz']);
             Appointment::create([
                 'company_id' => $company->id,
-                'customer_id' => $blockCustomer->id,
+                'customer_id' => $customer->id,
                 'service_type_id' => $maintenance->id,
                 'staff_member_id' => $staff->id,
                 'status' => AppointmentStatus::Confirmed,
-                'scheduled_at' => $date,
+                'scheduled_at' => $tuesday->copy()->setTimeFromTimeString($stop['time']),
                 'duration_minutes' => 60,
                 'travel_time_minutes' => 15,
             ]);
-            $confirmed++;
         }
+
+        $hamburgTour = [
+            ['time' => '09:00', 'plz' => '20095'],
+            ['time' => '14:00', 'plz' => '20097'],
+        ];
+
+        foreach ($hamburgTour as $stop) {
+            $customer = $this->createCustomer($company, $stop['plz']);
+            Appointment::create([
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'service_type_id' => $maintenance->id,
+                'staff_member_id' => $staff->id,
+                'status' => AppointmentStatus::Confirmed,
+                'scheduled_at' => $wednesday->copy()->setTimeFromTimeString($stop['time']),
+                'duration_minutes' => 60,
+                'travel_time_minutes' => 15,
+            ]);
+        }
+
+        $dueCustomer = $this->createCustomer($company, '10178');
+        $this->createDueRecurring($company, $dueCustomer, $maintenance);
 
         return [
             'staff' => 1,
-            'customers' => 4,
+            'customers' => 6,
             'due_services' => 1,
-            'confirmed_appointments' => $confirmed,
+            'confirmed_appointments' => 4,
         ];
     }
 

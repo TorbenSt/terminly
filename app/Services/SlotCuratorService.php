@@ -13,6 +13,7 @@ class SlotCuratorService
 
     public function __construct(
         private readonly AvailabilityService $availabilityService,
+        private readonly RegionalRoutingService $regionalRouting,
     ) {}
 
     /**
@@ -20,10 +21,14 @@ class SlotCuratorService
      *
      * @return array{slots: list<string>, recommended_index: int}
      */
-    public function curate(StaffMember $staff, string $feedback, int $durationMinutes): array
-    {
+    public function curate(
+        StaffMember $staff,
+        string $feedback,
+        int $durationMinutes,
+        ?string $customerPostalCode = null,
+    ): array {
         $preferences = $this->parseFeedback($feedback);
-        $candidates = $this->collectCandidates($staff, $preferences, $durationMinutes);
+        $candidates = $this->collectCandidates($staff, $preferences, $durationMinutes, $customerPostalCode);
 
         return $this->selectSlots($candidates, $preferences, $feedback);
     }
@@ -39,9 +44,10 @@ class SlotCuratorService
         array $isoSlots,
         string $feedback,
         int $durationMinutes,
+        ?string $customerPostalCode = null,
     ): array {
         $preferences = $this->parseFeedback($feedback);
-        $candidates = $this->collectCandidates($staff, $preferences, $durationMinutes);
+        $candidates = $this->collectCandidates($staff, $preferences, $durationMinutes, $customerPostalCode);
 
         foreach ($isoSlots as $index => $iso) {
             $start = Carbon::parse($iso);
@@ -68,6 +74,7 @@ class SlotCuratorService
      *     time_of_day: string,
      *     week_offset: int,
      *     earliest_date: ?Carbon,
+     *     latest_date: ?Carbon,
      *     earliest_hour: ?int,
      * }
      */
@@ -112,11 +119,14 @@ class SlotCuratorService
             $weekOffset = 1;
         }
 
+        $dateConstraints = $this->parseDateConstraints($lower);
+
         return [
             'preferred_day' => $preferredDay,
             'time_of_day' => $timeOfDay,
             'week_offset' => $weekOffset,
-            'earliest_date' => $this->parseEarliestDate($lower),
+            'earliest_date' => $dateConstraints['earliest_date'],
+            'latest_date' => $dateConstraints['latest_date'],
             'earliest_hour' => $this->parseEarliestHour($lower),
         ];
     }
@@ -130,9 +140,95 @@ class SlotCuratorService
         return null;
     }
 
-    private function parseEarliestDate(string $lower): ?Carbon
+    /**
+     * @return array{earliest_date: ?Carbon, latest_date: ?Carbon}
+     */
+    private function parseDateConstraints(string $lower): array
     {
-        $months = [
+        $explicitEarliest = $this->parseExplicitEarliestDate($lower);
+
+        if ($explicitEarliest !== null) {
+            return [
+                'earliest_date' => $explicitEarliest,
+                'latest_date' => null,
+            ];
+        }
+
+        $monthPeriod = $this->parseMonthPeriod($lower);
+
+        if ($monthPeriod !== null) {
+            return $monthPeriod;
+        }
+
+        return [
+            'earliest_date' => null,
+            'latest_date' => null,
+        ];
+    }
+
+    /**
+     * @return array{earliest_date: Carbon, latest_date: Carbon}|null
+     */
+    private function parseMonthPeriod(string $lower): ?array
+    {
+        $months = $this->monthNameMap();
+        $monthPattern = implode('|', array_keys($months));
+
+        $period = null;
+        $monthName = null;
+
+        if (preg_match(
+            '/(?:lieber\s+|gerne\s+|am\s+besten\s+)?(?:anfang|beginn|früh(?:\s+im)?)\s*(?:des?\s+|im\s+)?('.$monthPattern.')/u',
+            $lower,
+            $matches,
+        )) {
+            $period = 'start';
+            $monthName = $matches[1];
+        } elseif (preg_match(
+            '/(?:lieber\s+|gerne\s+|am\s+besten\s+)?(?:mitte|mitten\s+im)\s*(?:des?\s+)?('.$monthPattern.')/u',
+            $lower,
+            $matches,
+        )) {
+            $period = 'mid';
+            $monthName = $matches[1];
+        } elseif (preg_match(
+            '/(?:lieber\s+|gerne\s+|am\s+besten\s+)?(?:ende|enden|spät\s+im|gegen\s+ende)\s*(?:des?\s+|im\s+)?('.$monthPattern.')/u',
+            $lower,
+            $matches,
+        )) {
+            $period = 'end';
+            $monthName = $matches[1];
+        } elseif (preg_match('/\b('.$monthPattern.')\s+(?:ende|enden)\b/u', $lower, $matches)) {
+            $period = 'end';
+            $monthName = $matches[1];
+        } elseif (preg_match(
+            '/(?:lieber\s+|gerne\s+|am\s+besten\s+|im\s+|in\s+)(?:dem\s+)?('.$monthPattern.')\b/u',
+            $lower,
+            $matches,
+        )) {
+            $period = 'full';
+            $monthName = $matches[1];
+        }
+
+        if ($period === null || $monthName === null) {
+            return null;
+        }
+
+        $month = $months[$monthName] ?? null;
+
+        if ($month === null) {
+            return null;
+        }
+
+        return $this->monthPeriodWindow($month, $period);
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function monthNameMap(): array
+    {
+        return [
             'januar' => 1,
             'februar' => 2,
             'märz' => 3,
@@ -147,6 +243,48 @@ class SlotCuratorService
             'november' => 11,
             'dezember' => 12,
         ];
+    }
+
+    /**
+     * @return array{earliest_date: Carbon, latest_date: Carbon}
+     */
+    private function monthPeriodWindow(int $month, string $period): array
+    {
+        $year = now()->year;
+        $daysInMonth = Carbon::create($year, $month, 1, 0, 0, 0, config('app.timezone'))->daysInMonth;
+
+        [$startDay, $endDay] = match ($period) {
+            'start' => [1, min(10, $daysInMonth)],
+            'mid' => [11, min(20, $daysInMonth)],
+            'end' => [max(1, $daysInMonth - 9), $daysInMonth],
+            default => [1, $daysInMonth],
+        };
+
+        $earliest = $this->resolveEarliestDate($startDay, $month, $year);
+        $latest = $this->resolveEarliestDate($endDay, $month, $year);
+
+        if ($latest->lt(now()->startOfDay()) && $earliest->lt(now()->startOfDay())) {
+            $year++;
+            $daysInMonth = Carbon::create($year, $month, 1, 0, 0, 0, config('app.timezone'))->daysInMonth;
+            [$startDay, $endDay] = match ($period) {
+                'start' => [1, min(10, $daysInMonth)],
+                'mid' => [11, min(20, $daysInMonth)],
+                'end' => [max(1, $daysInMonth - 9), $daysInMonth],
+                default => [1, $daysInMonth],
+            };
+            $earliest = $this->resolveEarliestDate($startDay, $month, $year);
+            $latest = $this->resolveEarliestDate($endDay, $month, $year);
+        }
+
+        return [
+            'earliest_date' => $earliest,
+            'latest_date' => $latest,
+        ];
+    }
+
+    private function parseExplicitEarliestDate(string $lower): ?Carbon
+    {
+        $months = $this->monthNameMap();
 
         $ordinals = [
             'ersten' => 1,
@@ -201,9 +339,34 @@ class SlotCuratorService
         return $date;
     }
 
+    /**
+     * @param  array{earliest_date: ?Carbon, latest_date: ?Carbon}  $preferences
+     * @return list<Carbon>
+     */
+    private function datesInPreferenceWindow(array $preferences): array
+    {
+        if ($preferences['earliest_date'] === null || $preferences['latest_date'] === null) {
+            return [];
+        }
+
+        $dates = [];
+        $cursor = $preferences['earliest_date']->copy()->startOfDay();
+
+        while ($cursor->lte($preferences['latest_date'])) {
+            $dates[] = $cursor->copy();
+            $cursor->addDay();
+        }
+
+        return $dates;
+    }
+
     private function matchesConstraints(Carbon $time, array $preferences): bool
     {
         if ($preferences['earliest_date'] !== null && $time->lt($preferences['earliest_date'])) {
+            return false;
+        }
+
+        if ($preferences['latest_date'] !== null && $time->copy()->startOfDay()->gt($preferences['latest_date'])) {
             return false;
         }
 
@@ -218,20 +381,42 @@ class SlotCuratorService
         StaffMember $staff,
         array $preferences,
         int $durationMinutes,
+        ?string $customerPostalCode = null,
     ): Collection {
         $preferredDate = $this->resolvePreferredDate($preferences);
         $candidates = collect();
+        $windowDates = $this->datesInPreferenceWindow($preferences);
 
-        $tiers = [
-            1 => [$preferredDate],
-            2 => [$preferredDate->copy()->addWeek()],
-            3 => [$preferredDate->copy()->addWeekday(), $preferredDate->copy()->addWeeks(2)],
-            4 => $this->relaxedDates($preferredDate, $preferences),
-        ];
+        $regionalDates = $customerPostalCode && empty($windowDates)
+            ? $this->regionalRouting
+                ->rankDatesByRegion(
+                    $staff,
+                    $this->regionalRouting->regionKey($customerPostalCode),
+                    $preferences['earliest_date'] ?? now()->startOfDay(),
+                )
+                ->take(5)
+                ->map(fn (array $entry) => $entry['date'])
+                ->all()
+            : [];
+
+        if (! empty($windowDates)) {
+            $tiers = [1 => $windowDates];
+        } else {
+            $tiers = [
+                1 => ! empty($regionalDates) ? $regionalDates : [$preferredDate],
+                2 => [$preferredDate->copy()->addWeek()],
+                3 => [$preferredDate->copy()->addWeekday(), $preferredDate->copy()->addWeeks(2)],
+                4 => $this->relaxedDates($preferredDate, $preferences),
+            ];
+        }
 
         foreach ($tiers as $tier => $dates) {
             foreach ($dates as $date) {
                 if ($preferences['earliest_date'] !== null && $date->lt($preferences['earliest_date'])) {
+                    continue;
+                }
+
+                if ($preferences['latest_date'] !== null && $date->gt($preferences['latest_date'])) {
                     continue;
                 }
 
@@ -578,6 +763,11 @@ class SlotCuratorService
             $score += 15;
         }
 
+        if ($preferences['latest_date'] !== null && $slot->start->copy()->startOfDay()->lte($preferences['latest_date'])) {
+            $score += 10;
+            $score += max(0, 5 - $preferences['latest_date']->diffInDays($slot->start->copy()->startOfDay()));
+        }
+
         if ($preferences['earliest_hour'] !== null && $slot->start->hour >= $preferences['earliest_hour']) {
             $score += 10;
         }
@@ -606,6 +796,10 @@ class SlotCuratorService
     private function matchesTimeOfDay(Carbon $time, array $preferences): bool
     {
         if ($preferences['earliest_date'] !== null && $time->lt($preferences['earliest_date'])) {
+            return false;
+        }
+
+        if ($preferences['latest_date'] !== null && $time->copy()->startOfDay()->gt($preferences['latest_date'])) {
             return false;
         }
 
@@ -648,6 +842,38 @@ class SlotCuratorService
      */
     private function resolvePreferredDate(array $preferences): Carbon
     {
+        if ($preferences['earliest_date'] !== null && $preferences['latest_date'] !== null) {
+            $target = $preferences['latest_date']->copy()->startOfDay();
+
+            while ($target->gte($preferences['earliest_date']) && ! $target->isWeekday()) {
+                $target->subDay();
+            }
+
+            if ($target->lt($preferences['earliest_date'])) {
+                $target = $preferences['earliest_date']->copy()->startOfDay();
+
+                while (! $target->isWeekday() && $target->lte($preferences['latest_date'])) {
+                    $target->addDay();
+                }
+            }
+
+            if ($preferences['preferred_day'] !== null) {
+                while ($target->gte($preferences['earliest_date']) && $target->dayOfWeek !== $preferences['preferred_day']) {
+                    $target->subDay();
+                }
+
+                if ($target->lt($preferences['earliest_date'])) {
+                    $target = $preferences['earliest_date']->copy()->startOfDay();
+
+                    while ($target->lte($preferences['latest_date']) && $target->dayOfWeek !== $preferences['preferred_day']) {
+                        $target->addDay();
+                    }
+                }
+            }
+
+            return $target->startOfDay();
+        }
+
         if ($preferences['earliest_date'] !== null) {
             $target = $preferences['earliest_date']->copy()->startOfDay();
 
@@ -691,6 +917,10 @@ class SlotCuratorService
             $base = $preferences['earliest_date']->copy()->setTime($base->hour, 0);
         }
 
+        if ($preferences['latest_date'] !== null && $base->copy()->startOfDay()->gt($preferences['latest_date'])) {
+            $base = $preferences['latest_date']->copy()->setTime($base->hour, 0);
+        }
+
         return [
             $base->toIso8601String(),
             $base->copy()->addHours(2)->toIso8601String(),
@@ -714,6 +944,7 @@ class SlotCuratorService
     {
         return ($preferences['preferred_day'] !== null && $preferences['time_of_day'] !== 'any')
             || $preferences['earliest_date'] !== null
+            || $preferences['latest_date'] !== null
             || $preferences['earliest_hour'] !== null;
     }
 }

@@ -11,6 +11,7 @@ readonly class SchedulingContext
         public Collection $clusters,
         public Collection $staff,
         public Collection $negotiationFeedback,
+        public Collection $existingAppointments,
     ) {}
 
     public function toAiPayload(): array
@@ -20,6 +21,7 @@ readonly class SchedulingContext
             'clusters' => $this->clusters->values()->all(),
             'staff' => $this->staff->values()->all(),
             'negotiation_feedback' => $this->negotiationFeedback->values()->all(),
+            'existing_appointments' => $this->existingAppointments->values()->all(),
         ];
     }
 }

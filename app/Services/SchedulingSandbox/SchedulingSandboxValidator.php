@@ -5,6 +5,7 @@ namespace App\Services\SchedulingSandbox;
 use App\Models\AppointmentProposal;
 use App\Services\AvailabilityService;
 use App\Services\ClusteringService;
+use App\Services\RegionalRoutingService;
 use Carbon\Carbon;
 
 class SchedulingSandboxValidator
@@ -12,6 +13,7 @@ class SchedulingSandboxValidator
     public function __construct(
         private readonly AvailabilityService $availability,
         private readonly ClusteringService $clustering,
+        private readonly RegionalRoutingService $regionalRouting,
     ) {}
 
     /**
@@ -46,6 +48,27 @@ class SchedulingSandboxValidator
             strlen($region) >= 3,
             "Kunden-PLZ {$appointment->customer->postal_code} → Region {$region}.",
         );
+
+        if ($staff) {
+            $isoSlots = collect($proposal->options())
+                ->filter()
+                ->map(fn (Carbon $slot) => $slot->toIso8601String())
+                ->all();
+            $onBestRegionalDay = $this->regionalRouting->countSlotsOnBestRegionalDate(
+                $staff,
+                $appointment->customer->postal_code,
+                $isoSlots,
+            );
+            $bestDate = $this->regionalRouting->bestRegionalDate($staff, $appointment->customer->postal_code);
+            $checks[] = $this->check(
+                'regional_routing',
+                'Regionale Tour',
+                $onBestRegionalDay >= 2,
+                $bestDate
+                    ? "Mind. 2 von 3 Slots am besten Routing-Tag ({$bestDate->format('d.m.Y')}, Region {$region}): {$onBestRegionalDay} Treffer."
+                    : 'Kein Routing-Tag ermittelbar.',
+            );
+        }
 
         foreach ($proposal->options() as $number => $slot) {
             if (! $slot || ! $staff) {

@@ -8,6 +8,7 @@ use App\Models\AppointmentProposal;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\ServiceType;
+use App\Models\StaffMember;
 use App\Services\ProposalSchedulingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -42,10 +43,21 @@ class ProposalFlowTest extends TestCase
 
     public function test_public_proposal_page_is_accessible(): void
     {
-        $proposal = AppointmentProposal::factory()->create();
+        $company = Company::factory()->create(['timezone' => 'Europe/Berlin']);
+        $staff = StaffMember::factory()->create(['company_id' => $company->id]);
+        $proposal = AppointmentProposal::factory()->create([
+            'staff_member_id' => $staff->id,
+            'appointment_id' => Appointment::factory()->create([
+                'company_id' => $company->id,
+                'staff_member_id' => $staff->id,
+            ])->id,
+        ]);
 
         $response = $this->get(route('public.proposals.show', $proposal->token));
 
         $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('Public/ProposalResponse')
+            ->where('proposal.options.0.label', fn (string $label) => str_contains($label, 'Ankunft')));
     }
 }

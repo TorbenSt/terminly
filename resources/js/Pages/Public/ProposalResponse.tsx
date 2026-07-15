@@ -52,7 +52,8 @@ export default function ProposalResponse({ proposal, schedulingLab = false }: Pr
                     <CardHeader>
                         <CardTitle>Terminvorschläge – {proposal.service_name}</CardTitle>
                         <p className="text-sm text-muted-foreground">
-                            Dauer ca. {proposal.duration_minutes} Minuten · Runde {proposal.round}
+                            Ankunft im genannten Zeitfenster · Leistungsdauer ca. {proposal.duration_minutes}{' '}
+                            Minuten · Runde {proposal.round}
                         </p>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -85,7 +86,7 @@ export default function ProposalResponse({ proposal, schedulingLab = false }: Pr
                                     />
                                     <span className="font-medium">
                                         Option {option.number}
-                                        {option.recommended ? ' (Empfohlen)' : ''}: {option.label} Uhr
+                                        {option.recommended ? ' (Empfohlen)' : ''}: {option.label}
                                     </span>
                                 </label>
                             ))}

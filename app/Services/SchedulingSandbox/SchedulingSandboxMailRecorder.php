@@ -6,6 +6,7 @@ use App\Enums\SchedulingSandboxMessageType;
 use App\Mail\AppointmentProposalMail;
 use App\Models\Appointment;
 use App\Models\AppointmentProposal;
+use App\Services\ArrivalWindowService;
 use App\Models\SchedulingSandboxMessage;
 use App\Models\SchedulingSandboxRun;
 
@@ -53,6 +54,8 @@ class SchedulingSandboxMailRecorder
     private function proposalMeta(AppointmentProposal $proposal): array
     {
         $appointment = $proposal->appointment;
+        $arrivalWindows = app(ArrivalWindowService::class)->forProposal($proposal);
+        $formatter = app(ArrivalWindowService::class);
 
         return [
             'proposal_token' => $proposal->token,
@@ -60,10 +63,15 @@ class SchedulingSandboxMailRecorder
             'customer_postal_code' => $appointment->customer->postal_code,
             'service_name' => $appointment->serviceType->name,
             'staff_name' => $proposal->staffMember?->name,
-            'options' => collect($proposal->options())->map(fn ($at, $n) => [
-                'number' => $n,
-                'iso' => $at->toIso8601String(),
-            ])->values()->all(),
+            'options' => collect($proposal->options())->map(function ($at, $n) use ($arrivalWindows, $formatter, $appointment) {
+                return [
+                    'number' => $n,
+                    'iso' => $at->toIso8601String(),
+                    'label' => isset($arrivalWindows[$n])
+                        ? $formatter->formatLabel($arrivalWindows[$n], $appointment->company)
+                        : null,
+                ];
+            })->values()->all(),
             'public_url' => route('public.proposals.show', $proposal->token),
         ];
     }

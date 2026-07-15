@@ -102,6 +102,55 @@ class SlotCuratorServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_parse_feedback_recognizes_end_of_month_preference(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'Europe/Berlin'));
+
+        $preferences = app(SlotCuratorService::class)->parseFeedback('Lieber Ende August');
+
+        $this->assertSame('2026-08-22', $preferences['earliest_date']->toDateString());
+        $this->assertSame('2026-08-31', $preferences['latest_date']->toDateString());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_honors_end_of_month_preference_when_curating_slots(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'Europe/Berlin'));
+
+        $staff = StaffMember::factory()->create(['buffer_minutes' => 0]);
+
+        foreach (range(Carbon::MONDAY, Carbon::FRIDAY) as $dayOfWeek) {
+            StaffAvailability::factory()->create([
+                'staff_member_id' => $staff->id,
+                'day_of_week' => $dayOfWeek,
+                'start_time' => '08:00:00',
+                'end_time' => '18:00:00',
+            ]);
+        }
+
+        $result = app(SlotCuratorService::class)->curate(
+            $staff,
+            'Lieber Ende August',
+            60,
+        );
+
+        $this->assertCount(3, $result['slots']);
+
+        $windowStart = Carbon::parse('2026-08-22', 'Europe/Berlin')->startOfDay();
+        $windowEnd = Carbon::parse('2026-08-31', 'Europe/Berlin')->endOfDay();
+
+        foreach ($result['slots'] as $iso) {
+            $slot = Carbon::parse($iso);
+            $this->assertTrue(
+                $slot->between($windowStart, $windowEnd),
+                "Slot {$slot->toDateTimeString()} is outside end-of-August window",
+            );
+        }
+
+        Carbon::setTestNow();
+    }
+
     /**
      * @param  Collection<int, Carbon>  $slots
      */

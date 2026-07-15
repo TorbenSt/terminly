@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Enums\SchedulingSandboxRunStatus;
 use App\Enums\SchedulingSandboxScenario;
+use App\Models\AppointmentProposal;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\SchedulingSandbox\SchedulingSandboxService;
+use Carbon\Carbon;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -123,5 +125,62 @@ class SchedulingSandboxTest extends TestCase
 
         $this->assertNull($service->activeRunFor($user));
         $this->assertSame(0, Company::query()->where('is_sandbox', true)->count());
+    }
+
+    public function test_super_admin_can_view_sandbox_staff_calendar(): void
+    {
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::RegionalTour, false);
+        $staff = $service->activeRunFor($user)->company->staffMembers()->firstOrFail();
+
+        $this->actingAs($user)
+            ->get(route('admin.scheduling-lab.staff-calendar', $staff))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Admin/SchedulingLab/StaffCalendar')
+                ->has('appointments')
+                ->has('proposalOptions')
+                ->where('staffMember.id', $staff->id));
+    }
+
+    public function test_regional_tour_scheduling_prefers_existing_cluster_day(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'Europe/Berlin'));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::RegionalTour, false);
+        $run = $service->activeRunFor($user);
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $berlinTourDate = now()->addWeek()->startOfDay();
+        while ($berlinTourDate->dayOfWeek !== Carbon::TUESDAY) {
+            $berlinTourDate->addDay();
+        }
+
+        $validation = collect($run->validation_results)->first();
+        $this->assertNotNull($validation);
+
+        $routingCheck = collect($validation['checks'])->firstWhere('key', 'regional_routing');
+        $this->assertNotNull($routingCheck);
+        $this->assertTrue($routingCheck['passed'], $routingCheck['detail'] ?? 'Regional routing failed');
+
+        $proposalSlots = AppointmentProposal::query()
+            ->whereHas('appointment', fn ($q) => $q->where('company_id', $run->company_id))
+            ->latest()
+            ->firstOrFail()
+            ->options();
+
+        $onBerlinDay = collect($proposalSlots)
+            ->filter()
+            ->filter(fn (Carbon $slot) => $slot->toDateString() === $berlinTourDate->toDateString())
+            ->count();
+
+        $this->assertGreaterThanOrEqual(2, $onBerlinDay);
+
+        Carbon::setTestNow();
     }
 }

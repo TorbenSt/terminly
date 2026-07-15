@@ -19,12 +19,13 @@ function toDateString(date: Date): string {
 
 interface Props {
     date: string;
+    appointmentDates: string[];
     staffMember: { id: number; name: string };
     slots: { start: string; end: string }[];
     appointments: { id: number; customer: string; service: string; status: string; time: string | null }[];
 }
 
-export default function Calendar({ date, staffMember, slots, appointments }: Props) {
+export default function Calendar({ date, appointmentDates, staffMember, slots, appointments }: Props) {
     const selectDate = (nextDate: string) => {
         router.get(route('staff.calendar'), { date: nextDate });
     };
@@ -45,7 +46,11 @@ export default function Calendar({ date, staffMember, slots, appointments }: Pro
                     <button type="button" onClick={() => changeDate(1)} className="rounded border px-3 py-1">→</button>
                 </div>
 
-                <YearCalendar selectedDate={date} onSelectDate={selectDate} />
+                <YearCalendar
+                    selectedDate={date}
+                    onSelectDate={selectDate}
+                    appointmentDates={appointmentDates}
+                />
 
                 <div className="grid gap-6 md:grid-cols-2">
                     <Card>

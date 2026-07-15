@@ -11,6 +11,7 @@ use App\Models\RecurringService;
 use App\Models\StaffMember;
 use App\Services\AvailabilityService;
 use App\Services\ClusteringService;
+use App\Services\RegionalRoutingService;
 use App\Services\SchedulingSandbox\SandboxContext;
 use App\Services\SlotCuratorService;
 use Carbon\Carbon;
@@ -26,6 +27,7 @@ class GrokSchedulerService
         private readonly ClusteringService $clusteringService,
         private readonly AvailabilityService $availabilityService,
         private readonly SlotCuratorService $slotCurator,
+        private readonly RegionalRoutingService $regionalRouting,
     ) {}
 
     /**
@@ -36,35 +38,31 @@ class GrokSchedulerService
         $context = $this->buildContext($company, $negotiationAppointment);
 
         if (empty(config('grok.api_key')) || SandboxContext::shouldForceFallback($company)) {
-            return $this->applyNegotiationCuration(
-                $this->fallbackSchedule($context),
-                $context,
-            );
+            $assignments = $this->fallbackSchedule($context);
+        } else {
+            try {
+                $response = GrokAI::chat(
+                    [
+                        ['role' => 'system', 'content' => SchedulerSystemPrompt::build()],
+                        ['role' => 'user', 'content' => json_encode($context->toAiPayload(), JSON_THROW_ON_ERROR)],
+                    ],
+                    new ChatOptions(temperature: (float) config('grok.default_temperature', 0.3))
+                );
+
+                $parsed = json_decode($response->content(), true, 512, JSON_THROW_ON_ERROR);
+
+                $assignments = collect($parsed['assignments'] ?? []);
+            } catch (GrokException|\JsonException $e) {
+                Log::warning('Grok scheduling failed, using fallback', ['error' => $e->getMessage()]);
+
+                $assignments = $this->fallbackSchedule($context);
+            }
         }
 
-        try {
-            $response = GrokAI::chat(
-                [
-                    ['role' => 'system', 'content' => SchedulerSystemPrompt::build()],
-                    ['role' => 'user', 'content' => json_encode($context->toAiPayload(), JSON_THROW_ON_ERROR)],
-                ],
-                new ChatOptions(temperature: (float) config('grok.default_temperature', 0.3))
-            );
-
-            $parsed = json_decode($response->content(), true, 512, JSON_THROW_ON_ERROR);
-
-            return $this->applyNegotiationCuration(
-                collect($parsed['assignments'] ?? []),
-                $context,
-            );
-        } catch (GrokException|\JsonException $e) {
-            Log::warning('Grok scheduling failed, using fallback', ['error' => $e->getMessage()]);
-
-            return $this->applyNegotiationCuration(
-                $this->fallbackSchedule($context),
-                $context,
-            );
-        }
+        return $this->applyNegotiationCuration(
+            $this->applyRegionalRouting($assignments, $context),
+            $context,
+        );
     }
 
     public function buildContext(Company $company, ?Appointment $negotiationAppointment = null): SchedulingContext
@@ -72,12 +70,14 @@ class GrokSchedulerService
         $clusters = $this->clusteringService->exportClustersForAi($company);
         $staff = $this->exportStaffForAi($company);
         $negotiationFeedback = $this->exportNegotiationFeedback($company, $negotiationAppointment);
+        $existingAppointments = $this->regionalRouting->exportAppointmentsForAi($company);
 
         return new SchedulingContext(
             companyId: $company->id,
             clusters: $clusters,
             staff: $staff,
             negotiationFeedback: $negotiationFeedback,
+            existingAppointments: $existingAppointments,
         );
     }
 
@@ -169,17 +169,30 @@ class GrokSchedulerService
                         $staffId,
                         $feedback['feedback'],
                         $durationMinutes,
+                        $job['postal_code'] ?? null,
                     );
                     $slots = $curated['slots'];
                     $recommendedOption = $curated['recommended_option'];
                 } else {
-                    $slots = [
-                        $base->copy()->toIso8601String(),
-                        $base->copy()->addHours(2)->toIso8601String(),
-                        $base->copy()->addDay()->setTime(14, 0)->toIso8601String(),
-                    ];
+                    $staffMember = StaffMember::find($staffId);
+                    $postalCode = $job['postal_code'] ?? null;
+
+                    if ($staffMember && $postalCode) {
+                        $slots = $this->regionalRouting->buildRegionalSlots(
+                            $staffMember,
+                            $postalCode,
+                            $durationMinutes,
+                        );
+                    } else {
+                        $slots = [
+                            $base->copy()->toIso8601String(),
+                            $base->copy()->addHours(2)->toIso8601String(),
+                            $base->copy()->addDay()->setTime(14, 0)->toIso8601String(),
+                        ];
+                        $base->addHours(3);
+                    }
+
                     $recommendedOption = null;
-                    $base->addHours(3);
                 }
 
                 $assignments->push([
@@ -199,8 +212,12 @@ class GrokSchedulerService
     /**
      * @return array{slots: list<string>, recommended_option: int}
      */
-    private function curateNegotiationSlots(int $staffId, string $feedback, int $durationMinutes): array
-    {
+    private function curateNegotiationSlots(
+        int $staffId,
+        string $feedback,
+        int $durationMinutes,
+        ?string $postalCode = null,
+    ): array {
         $staff = StaffMember::find($staffId);
 
         if (! $staff) {
@@ -214,7 +231,7 @@ class GrokSchedulerService
             ];
         }
 
-        $curated = $this->slotCurator->curate($staff, $feedback, $durationMinutes);
+        $curated = $this->slotCurator->curate($staff, $feedback, $durationMinutes, $postalCode);
 
         return [
             'slots' => $curated['slots'],
@@ -226,11 +243,64 @@ class GrokSchedulerService
      * @param  Collection<int, array<string, mixed>>  $assignments
      * @return Collection<int, array<string, mixed>>
      */
+    private function applyRegionalRouting(Collection $assignments, SchedulingContext $context): Collection
+    {
+        $feedbackByCustomer = $context->negotiationFeedback->keyBy('customer_id');
+        $postalByCustomer = $this->postalCodesByCustomer($context);
+
+        return $assignments->map(function (array $assignment) use ($feedbackByCustomer, $postalByCustomer) {
+            $customerId = $assignment['customer_id'] ?? null;
+            $feedback = $customerId ? $feedbackByCustomer->get($customerId) : null;
+
+            if ($feedback && filled($feedback['feedback'] ?? null)) {
+                return $assignment;
+            }
+
+            $postalCode = $customerId ? ($postalByCustomer[$customerId] ?? null) : null;
+            $staff = StaffMember::find($assignment['staff_id'] ?? null);
+
+            if (! $staff || ! $postalCode) {
+                return $assignment;
+            }
+
+            $durationMinutes = $this->resolveDurationMinutes($assignment);
+            $slots = $this->regionalRouting->buildRegionalSlots($staff, $postalCode, $durationMinutes);
+
+            $assignment['slots'] = $slots;
+            $assignment['suggested_date'] = Carbon::parse($slots[0])->toDateString();
+
+            return $assignment;
+        });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function postalCodesByCustomer(SchedulingContext $context): array
+    {
+        $map = [];
+
+        foreach ($context->clusters as $cluster) {
+            foreach ($cluster['jobs'] ?? [] as $job) {
+                if (isset($job['customer_id'], $job['postal_code'])) {
+                    $map[$job['customer_id']] = $job['postal_code'];
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $assignments
+     * @return Collection<int, array<string, mixed>>
+     */
     private function applyNegotiationCuration(Collection $assignments, SchedulingContext $context): Collection
     {
         $feedbackByCustomer = $context->negotiationFeedback->keyBy('customer_id');
+        $postalByCustomer = $this->postalCodesByCustomer($context);
 
-        return $assignments->map(function (array $assignment) use ($feedbackByCustomer) {
+        return $assignments->map(function (array $assignment) use ($feedbackByCustomer, $postalByCustomer) {
             $customerId = $assignment['customer_id'] ?? null;
             $feedback = $customerId ? $feedbackByCustomer->get($customerId) : null;
 
@@ -244,11 +314,13 @@ class GrokSchedulerService
             }
 
             $durationMinutes = $this->resolveDurationMinutes($assignment);
+            $postalCode = $customerId ? ($postalByCustomer[$customerId] ?? null) : null;
             $curated = $this->slotCurator->curateFromIsoSlots(
                 $staff,
                 $assignment['slots'] ?? [],
                 $feedback['feedback'],
                 $durationMinutes,
+                $postalCode,
             );
 
             $assignment['slots'] = $curated['slots'];

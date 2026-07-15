@@ -411,6 +411,40 @@ export default function Index({
                                             </ul>
                                         </div>
                                     )}
+                                    {inspector.staff.length > 0 && (
+                                        <div>
+                                            <p className="font-medium">Mitarbeiter-Kalender</p>
+                                            <ul className="space-y-2">
+                                                {inspector.staff.map((member) => (
+                                                    <li
+                                                        key={member.id}
+                                                        className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                                                    >
+                                                        <span>
+                                                            {member.name}
+                                                            {member.services.length > 0 && (
+                                                                <span className="text-muted-foreground">
+                                                                    {' '}
+                                                                    · {member.services.join(', ')}
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                        <a
+                                                            href={route(
+                                                                'admin.scheduling-lab.staff-calendar',
+                                                                member.id,
+                                                            )}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="shrink-0 text-sm font-medium text-primary underline"
+                                                        >
+                                                            Kalender
+                                                        </a>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
