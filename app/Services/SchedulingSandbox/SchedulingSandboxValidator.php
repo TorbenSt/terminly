@@ -2,6 +2,7 @@
 
 namespace App\Services\SchedulingSandbox;
 
+use App\Enums\SchedulingSandboxScenario;
 use App\Models\AppointmentProposal;
 use App\Services\AvailabilityService;
 use App\Services\ClusteringService;
@@ -19,8 +20,10 @@ class SchedulingSandboxValidator
     /**
      * @return list<array<string, mixed>>
      */
-    public function validateProposals(AppointmentProposal $proposal): array
-    {
+    public function validateProposals(
+        AppointmentProposal $proposal,
+        ?SchedulingSandboxScenario $scenario = null,
+    ): array {
         $proposal->load([
             'appointment.customer',
             'appointment.serviceType',
@@ -49,7 +52,7 @@ class SchedulingSandboxValidator
             "Kunden-PLZ {$appointment->customer->postal_code} → Region {$region}.",
         );
 
-        if ($staff) {
+        if ($staff && $scenario === SchedulingSandboxScenario::RegionalTour) {
             $isoSlots = collect($proposal->options())
                 ->filter()
                 ->map(fn (Carbon $slot) => $slot->toIso8601String())
@@ -67,6 +70,16 @@ class SchedulingSandboxValidator
                 $bestDate
                     ? "Mind. 2 von 3 Slots am besten Routing-Tag ({$bestDate->format('d.m.Y')}, Region {$region}): {$onBestRegionalDay} Treffer."
                     : 'Kein Routing-Tag ermittelbar.',
+            );
+        }
+
+        if ($staff && $scenario === SchedulingSandboxScenario::RealLifeCapacity) {
+            $validOptions = collect($proposal->options())->filter()->count();
+            $checks[] = $this->check(
+                'proposal_complete',
+                'Drei Terminvorschläge',
+                $validOptions >= 3,
+                "{$validOptions} von 3 Optionen vorhanden trotz voller Kalender.",
             );
         }
 

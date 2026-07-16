@@ -25,7 +25,7 @@ class RegionalRoutingService
     public function exportAppointmentsForAi(Company $company): Collection
     {
         $from = now()->startOfDay();
-        $to = now()->addDays(21)->endOfDay();
+        $to = now()->addDays((int) config('scheduling.ai_appointment_horizon_days', 90))->endOfDay();
 
         return Appointment::query()
             ->where('company_id', $company->id)
@@ -50,6 +50,48 @@ class RegionalRoutingService
     }
 
     /**
+     * PLZ regions already served by this staff member on the given day.
+     *
+     * @return list<string>
+     */
+    public function regionsOnDate(StaffMember $staff, Carbon $date): array
+    {
+        return Appointment::query()
+            ->where('staff_member_id', $staff->id)
+            ->whereDate('scheduled_at', $date->toDateString())
+            ->whereIn('status', [AppointmentStatus::Confirmed, AppointmentStatus::Proposed])
+            ->whereNotNull('scheduled_at')
+            ->with('customer:id,postal_code')
+            ->get()
+            ->map(fn (Appointment $appointment) => $this->regionKey($appointment->customer->postal_code))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Same-day region lock: empty day or only the customer's region is allowed.
+     * Days with a different PLZ tour (e.g. Frankfurt while customer is Berlin) are blocked.
+     */
+    public function isDayCompatible(StaffMember $staff, Carbon $date, string $customerRegionKey): bool
+    {
+        $regions = $this->regionsOnDate($staff, $date);
+
+        if ($regions === []) {
+            return true;
+        }
+
+        foreach ($regions as $region) {
+            if ($region !== $customerRegionKey) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * @return Collection<int, array{date: Carbon, score: int}>
      */
     public function rankDatesByRegion(
@@ -59,12 +101,18 @@ class RegionalRoutingService
         ?Carbon $to = null,
     ): Collection {
         $from ??= now()->startOfDay();
-        $to ??= now()->addDays(21)->endOfDay();
+        $to ??= now()->addDays((int) config('scheduling.ai_appointment_horizon_days', 90))->endOfDay();
 
         $dates = collect();
         $cursor = $from->copy()->startOfDay();
 
         while ($cursor->lte($to)) {
+            if (! $this->isDayCompatible($staff, $cursor, $regionKey)) {
+                $cursor->addDay();
+
+                continue;
+            }
+
             $dates->push([
                 'date' => $cursor->copy(),
                 'score' => $this->countRegionalAppointmentsOnDate($staff, $cursor, $regionKey),
@@ -110,11 +158,13 @@ class RegionalRoutingService
     ): array {
         $regionKey = $this->regionKey($postalCode);
         $from = $earliestDate?->copy()->startOfDay() ?? now()->startOfDay();
-        $rankedDates = $this->rankDatesByRegion($staff, $regionKey, $from, now()->addDays(21));
+        $to = now()->addDays((int) config('scheduling.ai_appointment_horizon_days', 90))->endOfDay();
+        $rankedDates = $this->rankDatesByRegion($staff, $regionKey, $from, $to);
 
         $selected = collect();
         $regionalDays = $rankedDates->filter(fn (array $entry) => $entry['score'] > 0)->values();
-        $otherDays = $rankedDates->filter(fn (array $entry) => $entry['score'] === 0)->values();
+        // Empty / same-region-compatible days only (foreign tours already filtered out).
+        $openDays = $rankedDates->filter(fn (array $entry) => $entry['score'] === 0)->values();
 
         $datesToTry = collect();
         foreach ($regionalDays as $entry) {
@@ -126,12 +176,16 @@ class RegionalRoutingService
         }
 
         if ($datesToTry->isEmpty()) {
-            $datesToTry = $otherDays->map(fn (array $entry) => $entry['date']);
+            $datesToTry = $openDays->map(fn (array $entry) => $entry['date']);
         }
 
         foreach ($datesToTry as $date) {
             if ($selected->count() >= 3) {
                 break;
+            }
+
+            if (! $this->isDayCompatible($staff, $date, $regionKey)) {
+                continue;
             }
 
             $this->pickSlotsFromDate($staff, $date, $durationMinutes, $selected);
@@ -143,31 +197,35 @@ class RegionalRoutingService
                     break;
                 }
 
+                if (! $this->isDayCompatible($staff, $date, $regionKey)) {
+                    continue;
+                }
+
                 $this->pickSlotsFromDate($staff, $date, $durationMinutes, $selected, force: true);
             }
         }
 
-        if ($selected->count() < 3 && $regionalDays->isEmpty()) {
-            foreach ($otherDays as $entry) {
+        if ($selected->count() < 3) {
+            foreach ($openDays as $entry) {
                 if ($selected->count() >= 3) {
                     break;
+                }
+
+                if (! $this->isDayCompatible($staff, $entry['date'], $regionKey)) {
+                    continue;
                 }
 
                 $this->pickSlotsFromDate($staff, $entry['date'], $durationMinutes, $selected, force: true);
             }
         }
 
-        $isoSlots = $selected
-            ->take(3)
-            ->map(fn (TimeSlot $slot) => $slot->start->toIso8601String())
-            ->values()
-            ->all();
-
-        if (count($isoSlots) === 3) {
-            return $this->sortIsoSlots($isoSlots);
+        if ($selected->count() < 3) {
+            return $this->fallbackSlots($staff, $postalCode, $durationMinutes, $earliestDate);
         }
 
-        return $this->fallbackSlots($staff, $postalCode, $durationMinutes, $earliestDate);
+        return $this->sortIsoSlots(
+            $selected->take(3)->map(fn (TimeSlot $slot) => $slot->start->toIso8601String())->all(),
+        );
     }
 
     /**
@@ -261,18 +319,25 @@ class RegionalRoutingService
         int $durationMinutes,
         ?Carbon $earliestDate,
     ): array {
-        $base = ($earliestDate ?? $this->bestRegionalDate($staff, $postalCode) ?? now()->addWeekday())
-            ->copy()
-            ->setTime(9, 0);
+        $regionKey = $this->regionKey($postalCode);
+        $selected = collect();
+        $cursor = ($earliestDate ?? now())->copy()->startOfDay();
+        $limit = (int) config('scheduling.candidate_search_weekdays', 90);
+        $scanned = 0;
 
-        $slots = collect([
-            new TimeSlot($base->copy(), $base->copy()->addMinutes($durationMinutes), $staff->id),
-            new TimeSlot($base->copy()->addHours(2), $base->copy()->addHours(2)->addMinutes($durationMinutes), $staff->id),
-            new TimeSlot($base->copy()->addWeek(), $base->copy()->addWeek()->addMinutes($durationMinutes), $staff->id),
-        ]);
+        while ($scanned < $limit && $selected->count() < 3) {
+            if ($cursor->isWeekday() && $this->isDayCompatible($staff, $cursor, $regionKey)) {
+                $this->pickSlotsFromDate($staff, $cursor, $durationMinutes, $selected, force: true);
+                $scanned++;
+            } elseif ($cursor->isWeekday()) {
+                $scanned++;
+            }
+
+            $cursor->addDay();
+        }
 
         return $this->sortIsoSlots(
-            $slots->map(fn (TimeSlot $slot) => $slot->start->toIso8601String())->all(),
+            $selected->take(3)->map(fn (TimeSlot $slot) => $slot->start->toIso8601String())->all(),
         );
     }
 

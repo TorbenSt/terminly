@@ -93,7 +93,7 @@ class GrokSchedulerService
             ->get()
             ->map(function (StaffMember $staff) {
                 $from = now()->startOfDay();
-                $to = now()->addDays(14)->endOfDay();
+                $to = now()->addDays((int) config('scheduling.ai_slot_horizon_days', 90))->endOfDay();
 
                 return collect([
                     'staff_id' => $staff->id,
@@ -112,7 +112,7 @@ class GrokSchedulerService
                     ], fn ($value) => $value !== null))->values(),
                     'available_slots' => $this->availabilityService
                         ->exportSlotsForAi($staff, $from, $to, 60)
-                        ->take(20)
+                        ->take(40)
                         ->values(),
                 ]);
             });
@@ -149,17 +149,22 @@ class GrokSchedulerService
 
         foreach ($context->clusters as $cluster) {
             $jobs = collect($cluster['jobs'] ?? []);
-            $staff = $context->staff->first();
 
-            if ($jobs->isEmpty() || ! $staff) {
+            if ($jobs->isEmpty()) {
                 continue;
             }
 
-            $staffId = $staff['staff_id'];
             $suggestedDate = $cluster['suggested_date'] ?? now()->addWeekday()->toDateString();
             $base = Carbon::parse($suggestedDate)->setTime(9, 0);
 
             foreach ($jobs as $job) {
+                $staff = $this->pickQualifiedStaff($context->staff, $job['service_type_id'] ?? null);
+
+                if (! $staff) {
+                    continue;
+                }
+
+                $staffId = $staff['staff_id'];
                 $customerId = $job['customer_id'];
                 $feedback = $feedbackByCustomer->get($customerId);
                 $durationMinutes = $job['duration_min'] ?? 60;
@@ -207,6 +212,29 @@ class GrokSchedulerService
         }
 
         return $assignments;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>|Collection<string, mixed>>  $staffPool
+     * @return array<string, mixed>|null
+     */
+    private function pickQualifiedStaff(Collection $staffPool, mixed $serviceTypeId): ?array
+    {
+        $normalized = $staffPool
+            ->map(fn ($staff) => $staff instanceof Collection ? $staff->all() : (array) $staff)
+            ->values();
+
+        if ($serviceTypeId === null) {
+            return $normalized->first();
+        }
+
+        $serviceTypeId = (int) $serviceTypeId;
+
+        return $normalized->first(function (array $staff) use ($serviceTypeId) {
+            $ids = collect($staff['qualified_service_type_ids'] ?? [])->map(fn ($id) => (int) $id);
+
+            return $ids->contains($serviceTypeId);
+        }) ?? $normalized->first();
     }
 
     /**

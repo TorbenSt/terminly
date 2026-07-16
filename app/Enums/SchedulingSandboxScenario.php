@@ -9,6 +9,7 @@ enum SchedulingSandboxScenario: string
     case RegionalTour = 'regional_tour';
     case StaffQualification = 'staff_qualification';
     case GrokFallback = 'grok_fallback';
+    case RealLifeCapacity = 'real_life_capacity';
 
     public function label(): string
     {
@@ -18,6 +19,7 @@ enum SchedulingSandboxScenario: string
             self::RegionalTour => 'Regionale Tour',
             self::StaffQualification => 'Nur qualifizierter Mitarbeiter',
             self::GrokFallback => 'Einfach (nur Fallback, kein Grok)',
+            self::RealLifeCapacity => 'Real Life: volle Kalender',
         };
     }
 
@@ -29,6 +31,7 @@ enum SchedulingSandboxScenario: string
             self::RegionalTour => 'Bestehende PLZ-Tour (Berlin/Hamburg), neuer Kunde in gleicher Region.',
             self::StaffQualification => '2 Mitarbeiter mit unterschiedlichen Qualifikationen.',
             self::GrokFallback => 'Wie „Einfach“, erzwingt den deterministischen Fallback-Scheduler.',
+            self::RealLifeCapacity => '5 Mitarbeiter (nur 2 qualifiziert), 6+ PLZ-Cluster, Kalender ~65 % voll über 4 Monate – Stress-Test für reale Terminfindung.',
         };
     }
 

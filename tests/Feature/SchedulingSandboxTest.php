@@ -183,4 +183,74 @@ class SchedulingSandboxTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_real_life_capacity_scenario_seeds_dense_calendars_and_finds_slots(): void
+    {
+        // Keep app timezone (UTC) to match AvailabilityService / Eloquent casting in tests.
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', config('app.timezone')));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::RealLifeCapacity, false);
+        $run = $service->activeRunFor($user);
+
+        $company = $run->company;
+        $this->assertSame(5, $company->staffMembers()->count());
+        $this->assertSame(1, $company->recurringServices()->where('next_due_at', '<=', now())->count());
+
+        $maintenanceId = $company->serviceTypes()->where('name', 'Wartung')->value('id');
+        $qualifiedCount = $company->staffMembers()
+            ->whereHas('serviceTypes', fn ($q) => $q->where('service_types.id', $maintenanceId))
+            ->count();
+        $this->assertSame(2, $qualifiedCount);
+
+        $plzPrefixes = $company->customers()
+            ->pluck('postal_code')
+            ->map(fn (string $plz) => substr($plz, 0, 3))
+            ->unique()
+            ->count();
+        $this->assertGreaterThanOrEqual(6, $plzPrefixes);
+
+        $confirmed = $company->appointments()->where('status', 'confirmed')->count();
+        $this->assertGreaterThan(500, $confirmed);
+
+        $counts = $run->snapshot_meta['counts'] ?? [];
+        $this->assertSame(5, $counts['staff'] ?? null);
+        $this->assertGreaterThanOrEqual(6, $counts['plz_clusters'] ?? 0);
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $this->assertEquals(SchedulingSandboxRunStatus::Completed, $run->status);
+
+        $proposal = AppointmentProposal::query()
+            ->whereHas('appointment', fn ($q) => $q->where('company_id', $company->id))
+            ->with(['staffMember.serviceTypes', 'appointment.serviceType'])
+            ->latest()
+            ->firstOrFail();
+
+        $this->assertTrue(
+            $proposal->staffMember->serviceTypes->contains('id', $proposal->appointment->service_type_id),
+            'Proposal must be assigned to a qualified technician',
+        );
+
+        $validation = collect($run->validation_results)->first();
+        $this->assertNotNull($validation);
+
+        $qualification = collect($validation['checks'])->firstWhere('key', 'qualification');
+        $this->assertTrue($qualification['passed'] ?? false, $qualification['detail'] ?? 'qualification failed');
+
+        $complete = collect($validation['checks'])->firstWhere('key', 'proposal_complete');
+        $this->assertTrue($complete['passed'] ?? false, $complete['detail'] ?? 'proposal incomplete');
+
+        foreach ($validation['checks'] as $check) {
+            if (! str_starts_with($check['key'], 'slot_') || ! str_ends_with($check['key'], '_availability')) {
+                continue;
+            }
+
+            $this->assertTrue($check['passed'], $check['detail'] ?? $check['key']);
+        }
+
+        Carbon::setTestNow();
+    }
 }

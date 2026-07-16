@@ -85,4 +85,55 @@ class RegionalRoutingServiceTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_rejects_days_with_foreign_plz_tour(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $company = Company::factory()->create();
+        $serviceType = ServiceType::factory()->create(['company_id' => $company->id, 'duration_minutes' => 60]);
+        $staff = StaffMember::factory()->create(['company_id' => $company->id, 'buffer_minutes' => 0]);
+        $staff->serviceTypes()->attach($serviceType->id);
+
+        foreach (range(1, 5) as $dayOfWeek) {
+            StaffAvailability::factory()->create([
+                'staff_member_id' => $staff->id,
+                'day_of_week' => $dayOfWeek,
+                'start_time' => '08:00:00',
+                'end_time' => '17:00:00',
+            ]);
+        }
+
+        $frankfurtDay = Carbon::parse('2026-08-25', 'UTC');
+        foreach (['60311', '60313', '60316'] as $index => $plz) {
+            $customer = Customer::factory()->create(['company_id' => $company->id, 'postal_code' => $plz]);
+            Appointment::create([
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'service_type_id' => $serviceType->id,
+                'staff_member_id' => $staff->id,
+                'status' => AppointmentStatus::Confirmed,
+                'scheduled_at' => $frankfurtDay->copy()->setTime(8 + ($index * 2), 0),
+                'duration_minutes' => 60,
+                'travel_time_minutes' => 0,
+            ]);
+        }
+
+        $routing = app(RegionalRoutingService::class);
+
+        $this->assertFalse($routing->isDayCompatible($staff, $frankfurtDay, '101'));
+        $this->assertTrue($routing->isDayCompatible($staff, $frankfurtDay, '603'));
+
+        $slots = $routing->buildRegionalSlots($staff, '10178', 60, Carbon::parse('2026-08-14', 'UTC'));
+
+        foreach ($slots as $iso) {
+            $this->assertNotSame(
+                $frankfurtDay->toDateString(),
+                Carbon::parse($iso)->toDateString(),
+                'Berlin customer must not be scheduled onto Frankfurt tour day',
+            );
+        }
+
+        Carbon::setTestNow();
+    }
 }

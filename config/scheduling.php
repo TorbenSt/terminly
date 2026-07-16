@@ -18,4 +18,19 @@ return [
 
     'arrival_window_max_minutes' => (int) env('ARRIVAL_WINDOW_MAX_MINUTES', 90),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Planungshorizont (AI-Kontext & Fallback)
+    |--------------------------------------------------------------------------
+    */
+
+    // Compact AI context window (token + query cost)
+    'ai_slot_horizon_days' => (int) env('SCHEDULING_AI_SLOT_HORIZON_DAYS', 28),
+
+    // Existing tours / regional ranking horizon
+    'ai_appointment_horizon_days' => (int) env('SCHEDULING_AI_APPOINTMENT_HORIZON_DAYS', 90),
+
+    // Fallback/curator search when calendars are dense
+    'candidate_search_weekdays' => (int) env('SCHEDULING_CANDIDATE_SEARCH_WEEKDAYS', 90),
+
 ];

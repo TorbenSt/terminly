@@ -132,7 +132,7 @@ class SchedulingSandboxService
             $validationResults = $proposals->map(fn (AppointmentProposal $p) => [
                 'proposal_id' => $p->id,
                 'customer' => $p->appointment->customer->name,
-                'checks' => $this->validator->validateProposals($p),
+                'checks' => $this->validator->validateProposals($p, $run->scenario),
             ])->values()->all();
 
             $run->update([

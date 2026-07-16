@@ -114,6 +114,100 @@ class SlotCuratorServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_parse_feedback_recognizes_multiple_weekdays(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $preferences = app(SlotCuratorService::class)->parseFeedback(
+            'bitte erst ab dem 14.08. entweder Dienstag oder Donnerstag nachmittag',
+        );
+
+        $this->assertSame([Carbon::TUESDAY, Carbon::THURSDAY], $preferences['preferred_days']);
+        $this->assertSame('afternoon', $preferences['time_of_day']);
+        $this->assertSame('2026-08-14', $preferences['earliest_date']?->toDateString());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_negotiation_avoids_foreign_plz_tour_days(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $company = \App\Models\Company::factory()->create();
+        $staff = StaffMember::factory()->create(['company_id' => $company->id, 'buffer_minutes' => 0]);
+        $serviceType = \App\Models\ServiceType::factory()->create([
+            'company_id' => $company->id,
+            'duration_minutes' => 60,
+        ]);
+
+        foreach (range(Carbon::MONDAY, Carbon::FRIDAY) as $dayOfWeek) {
+            StaffAvailability::factory()->create([
+                'staff_member_id' => $staff->id,
+                'day_of_week' => $dayOfWeek,
+                'start_time' => '08:00:00',
+                'end_time' => '17:00:00',
+            ]);
+        }
+
+        $frankfurtDay = Carbon::parse('2026-08-25', 'UTC'); // Tuesday
+        foreach (['60311', '60313'] as $index => $plz) {
+            $customer = \App\Models\Customer::factory()->create([
+                'company_id' => $company->id,
+                'postal_code' => $plz,
+            ]);
+            \App\Models\Appointment::create([
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'service_type_id' => $serviceType->id,
+                'staff_member_id' => $staff->id,
+                'status' => \App\Enums\AppointmentStatus::Confirmed,
+                'scheduled_at' => $frankfurtDay->copy()->setTime(8 + ($index * 2), 0),
+                'duration_minutes' => 60,
+                'travel_time_minutes' => 0,
+            ]);
+        }
+
+        $berlinDay = Carbon::parse('2026-08-27', 'UTC'); // Thursday
+        foreach (['10115', '10117'] as $index => $plz) {
+            $customer = \App\Models\Customer::factory()->create([
+                'company_id' => $company->id,
+                'postal_code' => $plz,
+            ]);
+            \App\Models\Appointment::create([
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'service_type_id' => $serviceType->id,
+                'staff_member_id' => $staff->id,
+                'status' => \App\Enums\AppointmentStatus::Confirmed,
+                'scheduled_at' => $berlinDay->copy()->setTime(8 + ($index * 2), 0),
+                'duration_minutes' => 60,
+                'travel_time_minutes' => 0,
+            ]);
+        }
+
+        $result = app(SlotCuratorService::class)->curate(
+            $staff,
+            'bitte erst ab dem 14.08. entweder Dienstag oder Donnerstag nachmittag',
+            60,
+            '10178',
+        );
+
+        $this->assertCount(3, $result['slots']);
+
+        foreach ($result['slots'] as $iso) {
+            $slot = Carbon::parse($iso);
+            $this->assertContains($slot->dayOfWeek, [Carbon::TUESDAY, Carbon::THURSDAY]);
+            $this->assertGreaterThanOrEqual(12, $slot->hour);
+            $this->assertNotSame(
+                $frankfurtDay->toDateString(),
+                $slot->toDateString(),
+                'Must not propose Berlin customer onto Frankfurt tour day',
+            );
+        }
+
+        Carbon::setTestNow();
+    }
+
     public function test_honors_end_of_month_preference_when_curating_slots(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'Europe/Berlin'));

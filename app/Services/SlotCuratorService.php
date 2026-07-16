@@ -49,6 +49,10 @@ class SlotCuratorService
         $preferences = $this->parseFeedback($feedback);
         $candidates = $this->collectCandidates($staff, $preferences, $durationMinutes, $customerPostalCode);
 
+        $customerRegion = $customerPostalCode
+            ? $this->regionalRouting->regionKey($customerPostalCode)
+            : null;
+
         foreach ($isoSlots as $index => $iso) {
             $start = Carbon::parse($iso);
 
@@ -56,9 +60,17 @@ class SlotCuratorService
                 continue;
             }
 
+            if (! $this->matchesPreferredWeekday($start, $preferences)) {
+                continue;
+            }
+
+            if ($customerRegion && ! $this->regionalRouting->isDayCompatible($staff, $start, $customerRegion)) {
+                continue;
+            }
+
             $slot = new TimeSlot($start, $start->copy()->addMinutes($durationMinutes), $staff->id);
             $tier = $index === 0 ? 0 : 1;
-            $candidates->push($this->tagCandidate($slot, $tier, $preferences));
+            $candidates->push($this->tagCandidate($slot, $tier, $preferences, $staff, $customerRegion));
         }
 
         $candidates = $candidates
@@ -71,6 +83,7 @@ class SlotCuratorService
     /**
      * @return array{
      *     preferred_day: ?int,
+     *     preferred_days: list<int>,
      *     time_of_day: string,
      *     week_offset: int,
      *     earliest_date: ?Carbon,
@@ -90,13 +103,13 @@ class SlotCuratorService
             'freitag' => Carbon::FRIDAY,
         ];
 
-        $preferredDay = null;
+        $preferredDays = [];
         foreach ($dayMap as $name => $dayOfWeek) {
             if (str_contains($lower, $name)) {
-                $preferredDay = $dayOfWeek;
-                break;
+                $preferredDays[] = $dayOfWeek;
             }
         }
+        $preferredDays = array_values(array_unique($preferredDays));
 
         $timeOfDay = 'any';
         if (str_contains($lower, 'nachmittag') || str_contains($lower, 'nachmittags')) {
@@ -122,7 +135,8 @@ class SlotCuratorService
         $dateConstraints = $this->parseDateConstraints($lower);
 
         return [
-            'preferred_day' => $preferredDay,
+            'preferred_day' => $preferredDays[0] ?? null,
+            'preferred_days' => $preferredDays,
             'time_of_day' => $timeOfDay,
             'week_offset' => $weekOffset,
             'earliest_date' => $dateConstraints['earliest_date'],
@@ -386,27 +400,65 @@ class SlotCuratorService
         $preferredDate = $this->resolvePreferredDate($preferences);
         $candidates = collect();
         $windowDates = $this->datesInPreferenceWindow($preferences);
+        $customerRegion = $customerPostalCode
+            ? $this->regionalRouting->regionKey($customerPostalCode)
+            : null;
 
-        $regionalDates = $customerPostalCode && empty($windowDates)
-            ? $this->regionalRouting
-                ->rankDatesByRegion(
-                    $staff,
-                    $this->regionalRouting->regionKey($customerPostalCode),
-                    $preferences['earliest_date'] ?? now()->startOfDay(),
-                )
-                ->take(5)
-                ->map(fn (array $entry) => $entry['date'])
-                ->all()
-            : [];
+        $rankedRegional = $customerRegion
+            ? $this->regionalRouting->rankDatesByRegion(
+                $staff,
+                $customerRegion,
+                $preferences['earliest_date'] ?? now()->startOfDay(),
+                $preferences['latest_date']?->copy()->endOfDay(),
+            )
+            : collect();
+
+        $regionalDates = $rankedRegional
+            ->filter(fn (array $entry) => $entry['score'] > 0)
+            ->when(
+                ! empty($preferences['preferred_days']),
+                fn (Collection $dates) => $dates->filter(
+                    fn (array $entry) => $this->matchesPreferredWeekday($entry['date'], $preferences),
+                ),
+            )
+            ->take(8)
+            ->map(fn (array $entry) => $entry['date'])
+            ->values()
+            ->all();
 
         if (! empty($windowDates)) {
-            $tiers = [1 => $windowDates];
+            $compatibleWindow = $customerRegion
+                ? array_values(array_filter(
+                    $windowDates,
+                    fn (Carbon $date) => $this->regionalRouting->isDayCompatible($staff, $date, $customerRegion)
+                        && $this->matchesPreferredWeekday($date, $preferences),
+                ))
+                : array_values(array_filter(
+                    $windowDates,
+                    fn (Carbon $date) => $this->matchesPreferredWeekday($date, $preferences),
+                ));
+
+            $sameRegionInWindow = array_values(array_filter(
+                $compatibleWindow,
+                fn (Carbon $date) => $customerRegion
+                    && in_array($date->toDateString(), array_map(
+                        fn (Carbon $regionalDate) => $regionalDate->toDateString(),
+                        $regionalDates,
+                    ), true),
+            ));
+
+            $tiers = [
+                1 => ! empty($sameRegionInWindow) ? $sameRegionInWindow : array_slice($compatibleWindow, 0, 12),
+                2 => $compatibleWindow,
+                3 => $this->horizonSearchDates($preferredDate, $preferences, $staff, $customerRegion),
+            ];
         } else {
             $tiers = [
                 1 => ! empty($regionalDates) ? $regionalDates : [$preferredDate],
                 2 => [$preferredDate->copy()->addWeek()],
                 3 => [$preferredDate->copy()->addWeekday(), $preferredDate->copy()->addWeeks(2)],
                 4 => $this->relaxedDates($preferredDate, $preferences),
+                5 => $this->horizonSearchDates($preferredDate, $preferences, $staff, $customerRegion),
             ];
         }
 
@@ -420,6 +472,14 @@ class SlotCuratorService
                     continue;
                 }
 
+                if ($customerRegion && ! $this->regionalRouting->isDayCompatible($staff, $date, $customerRegion)) {
+                    continue;
+                }
+
+                if (! $this->matchesPreferredWeekday($date, $preferences)) {
+                    continue;
+                }
+
                 $slots = $this->filterByTimeOfDay(
                     $this->availabilityService->getAvailableSlots($staff, $date, $durationMinutes),
                     $preferences,
@@ -430,8 +490,13 @@ class SlotCuratorService
                         continue;
                     }
 
-                    $candidates->push($this->tagCandidate($slot, $tier, $preferences));
+                    $candidates->push($this->tagCandidate($slot, $tier, $preferences, $staff, $customerRegion));
                 }
+            }
+
+            // Skip expensive horizon sweep when nearer tiers already yield a healthy pool.
+            if ($tier >= 4 && $candidates->count() >= 24) {
+                break;
             }
         }
 
@@ -439,6 +504,71 @@ class SlotCuratorService
             ->unique(fn (array $c) => $c['slot']->start->toIso8601String())
             ->sortByDesc('score')
             ->values();
+    }
+
+    /**
+     * Broader weekday sweep for dense calendars (real-life capacity scenarios).
+     *
+     * @param  array{earliest_date: ?Carbon, latest_date: ?Carbon, preferred_days: list<int>}  $preferences
+     * @return list<Carbon>
+     */
+    private function horizonSearchDates(
+        Carbon $preferredDate,
+        array $preferences,
+        ?StaffMember $staff = null,
+        ?string $customerRegion = null,
+    ): array {
+        $limit = (int) config('scheduling.candidate_search_weekdays', 90);
+        $dates = [];
+        $cursor = ($preferences['earliest_date'] ?? $preferredDate)->copy()->startOfDay();
+
+        if ($cursor->lt(now()->startOfDay())) {
+            $cursor = now()->startOfDay();
+        }
+
+        $scanned = 0;
+        while ($scanned < $limit) {
+            if ($preferences['latest_date'] !== null && $cursor->gt($preferences['latest_date'])) {
+                break;
+            }
+
+            if (
+                $cursor->isWeekday()
+                && $this->matchesPreferredWeekday($cursor, $preferences)
+                && (
+                    ! $staff
+                    || ! $customerRegion
+                    || $this->regionalRouting->isDayCompatible($staff, $cursor, $customerRegion)
+                )
+            ) {
+                $dates[] = $cursor->copy();
+                $scanned++;
+            } elseif ($cursor->isWeekday()) {
+                $scanned++;
+            }
+
+            $cursor->addDay();
+        }
+
+        return $dates;
+    }
+
+    /**
+     * @param  array{preferred_days?: list<int>, preferred_day?: ?int}  $preferences
+     */
+    private function matchesPreferredWeekday(Carbon $date, array $preferences): bool
+    {
+        $days = $preferences['preferred_days'] ?? [];
+
+        if ($days === [] && ($preferences['preferred_day'] ?? null) !== null) {
+            $days = [$preferences['preferred_day']];
+        }
+
+        if ($days === []) {
+            return true;
+        }
+
+        return in_array($date->dayOfWeek, $days, true);
     }
 
     /**
@@ -742,16 +872,21 @@ class SlotCuratorService
     }
 
     /**
-     * @param  array{preferred_day: ?int, time_of_day: string, week_offset: int}  $preferences
+     * @param  array{preferred_day: ?int, preferred_days?: list<int>, time_of_day: string, week_offset: int}  $preferences
      */
-    private function tagCandidate(TimeSlot $slot, int $tier, array $preferences): array
-    {
+    private function tagCandidate(
+        TimeSlot $slot,
+        int $tier,
+        array $preferences,
+        ?StaffMember $staff = null,
+        ?string $customerRegion = null,
+    ): array {
         $score = match ($tier) {
             0 => 100,
             default => 40 - min($tier, 4),
         };
 
-        if ($preferences['preferred_day'] !== null && $slot->start->dayOfWeek === $preferences['preferred_day']) {
+        if ($this->matchesPreferredWeekday($slot->start, $preferences)) {
             $score += 20;
         }
 
@@ -770,6 +905,16 @@ class SlotCuratorService
 
         if ($preferences['earliest_hour'] !== null && $slot->start->hour >= $preferences['earliest_hour']) {
             $score += 10;
+        }
+
+        if ($staff && $customerRegion) {
+            $sameRegionCount = collect($this->regionalRouting->regionsOnDate($staff, $slot->start))
+                ->filter(fn (string $region) => $region === $customerRegion)
+                ->count();
+
+            if ($sameRegionCount > 0) {
+                $score += 40 + min(20, $sameRegionCount * 5);
+            }
         }
 
         $preferredDate = $this->resolvePreferredDate($preferences);
@@ -830,7 +975,7 @@ class SlotCuratorService
             $cursor->addWeekday();
         }
 
-        if ($preferences['preferred_day'] !== null) {
+        if (($preferences['preferred_days'] ?? []) !== [] || ($preferences['preferred_day'] ?? null) !== null) {
             $dates[] = $preferredDate->copy()->addWeeks(2);
         }
 
@@ -845,29 +990,15 @@ class SlotCuratorService
         if ($preferences['earliest_date'] !== null && $preferences['latest_date'] !== null) {
             $target = $preferences['latest_date']->copy()->startOfDay();
 
-            while ($target->gte($preferences['earliest_date']) && ! $target->isWeekday()) {
+            while ($target->gte($preferences['earliest_date']) && ! $this->matchesPreferredWeekday($target, $preferences)) {
                 $target->subDay();
             }
 
             if ($target->lt($preferences['earliest_date'])) {
                 $target = $preferences['earliest_date']->copy()->startOfDay();
 
-                while (! $target->isWeekday() && $target->lte($preferences['latest_date'])) {
+                while ($target->lte($preferences['latest_date']) && ! $this->matchesPreferredWeekday($target, $preferences)) {
                     $target->addDay();
-                }
-            }
-
-            if ($preferences['preferred_day'] !== null) {
-                while ($target->gte($preferences['earliest_date']) && $target->dayOfWeek !== $preferences['preferred_day']) {
-                    $target->subDay();
-                }
-
-                if ($target->lt($preferences['earliest_date'])) {
-                    $target = $preferences['earliest_date']->copy()->startOfDay();
-
-                    while ($target->lte($preferences['latest_date']) && $target->dayOfWeek !== $preferences['preferred_day']) {
-                        $target->addDay();
-                    }
                 }
             }
 
@@ -877,25 +1008,25 @@ class SlotCuratorService
         if ($preferences['earliest_date'] !== null) {
             $target = $preferences['earliest_date']->copy()->startOfDay();
 
-            if ($preferences['preferred_day'] !== null) {
-                while ($target->dayOfWeek !== $preferences['preferred_day']) {
-                    $target->addDay();
+            while (! $this->matchesPreferredWeekday($target, $preferences) || ! $target->isWeekday()) {
+                $target->addDay();
+
+                if ($target->diffInDays($preferences['earliest_date']) > 14) {
+                    break;
                 }
-            } elseif (! $target->isWeekday()) {
-                $target = $target->nextWeekday();
             }
 
-            return $target;
+            return $target->startOfDay();
         }
 
         $target = now()->addWeeks($preferences['week_offset'])->startOfDay();
 
-        if ($preferences['preferred_day'] !== null) {
-            while ($target->dayOfWeek !== $preferences['preferred_day']) {
-                $target->addDay();
+        while (! $this->matchesPreferredWeekday($target, $preferences) || ! $target->isWeekday()) {
+            $target->addDay();
+
+            if ($target->diffInDays(now()) > 21) {
+                break;
             }
-        } else {
-            $target = $target->nextWeekday();
         }
 
         return $target->startOfDay();
@@ -942,7 +1073,10 @@ class SlotCuratorService
      */
     private function isNarrowPreference(array $preferences): bool
     {
-        return ($preferences['preferred_day'] !== null && $preferences['time_of_day'] !== 'any')
+        $hasPreferredDays = ($preferences['preferred_days'] ?? []) !== []
+            || ($preferences['preferred_day'] ?? null) !== null;
+
+        return ($hasPreferredDays && $preferences['time_of_day'] !== 'any')
             || $preferences['earliest_date'] !== null
             || $preferences['latest_date'] !== null
             || $preferences['earliest_hour'] !== null;
