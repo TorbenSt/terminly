@@ -17,9 +17,24 @@ interface Paginated<T> {
     data: T[];
 }
 
+interface StaffOption {
+    id: number;
+    name: string;
+}
+
+interface BindingOption {
+    value: string;
+    label: string;
+    description: string;
+}
+
 interface Props {
     customers: Paginated<Customer>;
     serviceTypes: Pick<ServiceType, 'id' | 'name' | 'duration_minutes' | 'is_recurring'>[];
+    staffMembers: StaffOption[];
+    currentStaffMemberId: number | null;
+    staffCustomerBinding: string;
+    staffCustomerBindingOptions: BindingOption[];
 }
 
 type CustomerFormData = {
@@ -31,7 +46,11 @@ type CustomerFormData = {
     city: string;
     notes: string;
     is_active?: boolean;
+    primary_staff_member_id?: string;
+    backup_staff_member_id?: string;
 };
+
+const selectClass = 'flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm';
 
 function CustomerFormFields({
     data,
@@ -39,12 +58,14 @@ function CustomerFormFields({
     errors,
     idPrefix,
     showActive = false,
+    staffMembers = [],
 }: {
     data: CustomerFormData;
     setData: (key: keyof CustomerFormData, value: string | boolean) => void;
     errors: Partial<Record<keyof CustomerFormData, string>>;
     idPrefix: string;
     showActive?: boolean;
+    staffMembers?: StaffOption[];
 }) {
     return (
         <>
@@ -111,6 +132,42 @@ function CustomerFormFields({
                     onChange={(e) => setData('notes', e.target.value)}
                 />
             </div>
+            {staffMembers.length > 0 && (
+                <>
+                    <div>
+                        <Label htmlFor={`${idPrefix}-primary`}>Stammansprechpartner</Label>
+                        <select
+                            id={`${idPrefix}-primary`}
+                            className={selectClass}
+                            value={data.primary_staff_member_id ?? ''}
+                            onChange={(e) => setData('primary_staff_member_id', e.target.value)}
+                        >
+                            <option value="">Kein Stamm</option>
+                            {staffMembers.map((staff) => (
+                                <option key={staff.id} value={String(staff.id)}>
+                                    {staff.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <Label htmlFor={`${idPrefix}-backup`}>Vertretung</Label>
+                        <select
+                            id={`${idPrefix}-backup`}
+                            className={selectClass}
+                            value={data.backup_staff_member_id ?? ''}
+                            onChange={(e) => setData('backup_staff_member_id', e.target.value)}
+                        >
+                            <option value="">Keine Vertretung</option>
+                            {staffMembers.map((staff) => (
+                                <option key={staff.id} value={String(staff.id)}>
+                                    {staff.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </>
+            )}
             {showActive && (
                 <label className="flex items-center gap-2 text-sm">
                     <input
@@ -125,19 +182,28 @@ function CustomerFormFields({
     );
 }
 
-export default function Index({ customers, serviceTypes }: Props) {
+export default function Index({
+    customers,
+    serviceTypes,
+    staffMembers,
+    currentStaffMemberId,
+    staffCustomerBinding,
+    staffCustomerBindingOptions,
+}: Props) {
     const { auth, flash } = usePage().props as {
         auth: { user: { roles: string[] } | null };
         flash?: { success?: string; error?: string };
     };
     const roles = auth.user?.roles ?? [];
     const canManage = roles.includes('company_admin');
-    const canAssignServices = canManage || roles.includes('staff');
+    const isStaff = roles.includes('staff');
+    const canAssignServices = canManage || isStaff;
     const [editingId, setEditingId] = useState<number | null>(null);
     const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null);
     const [nameSearch, setNameSearch] = useState('');
     const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
     const [filterWithoutServices, setFilterWithoutServices] = useState(false);
+    const [bindingMode, setBindingMode] = useState(staffCustomerBinding);
 
     const hasActiveFilters =
         nameSearch.trim().length > 0 || selectedServiceTypeIds.length > 0 || filterWithoutServices;
@@ -187,6 +253,8 @@ export default function Index({ customers, serviceTypes }: Props) {
         postal_code: '',
         city: '',
         notes: '',
+        primary_staff_member_id: '',
+        backup_staff_member_id: '',
     });
 
     const editForm = useForm<CustomerFormData & { is_active: boolean }>({
@@ -198,6 +266,8 @@ export default function Index({ customers, serviceTypes }: Props) {
         city: '',
         notes: '',
         is_active: true,
+        primary_staff_member_id: '',
+        backup_staff_member_id: '',
     });
 
     const submitCreate = (e: FormEvent) => {
@@ -220,6 +290,12 @@ export default function Index({ customers, serviceTypes }: Props) {
             city: customer.city,
             notes: customer.notes ?? '',
             is_active: customer.is_active,
+            primary_staff_member_id: customer.primary_staff_member_id
+                ? String(customer.primary_staff_member_id)
+                : '',
+            backup_staff_member_id: customer.backup_staff_member_id
+                ? String(customer.backup_staff_member_id)
+                : '',
         });
         setEditingId(customer.id);
     };
@@ -237,6 +313,23 @@ export default function Index({ customers, serviceTypes }: Props) {
         router.delete(route('customers.destroy', customer.id));
     };
 
+    const saveBindingMode = (e: FormEvent) => {
+        e.preventDefault();
+        router.patch(
+            route('company.settings.update'),
+            { staff_customer_binding: bindingMode },
+            { preserveScroll: true },
+        );
+    };
+
+    const claimPrimary = (customer: Customer, action: 'claim' | 'release') => {
+        router.post(
+            route('customers.claim-primary-staff', customer.id),
+            { action },
+            { preserveScroll: true },
+        );
+    };
+
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold">Kunden</h2>}>
             <Head title="Kunden" />
@@ -246,6 +339,43 @@ export default function Index({ customers, serviceTypes }: Props) {
                 )}
                 {flash?.error && (
                     <p className="rounded-md bg-red-50 p-3 text-sm text-red-800">{flash.error}</p>
+                )}
+
+                {canManage && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Stammtechniker-Bindung</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={saveBindingMode} className="space-y-3">
+                                <div>
+                                    <Label htmlFor="staff-customer-binding">Planungsmodus</Label>
+                                    <select
+                                        id="staff-customer-binding"
+                                        className={`${selectClass} mt-1`}
+                                        value={bindingMode}
+                                        onChange={(e) => setBindingMode(e.target.value)}
+                                    >
+                                        {staffCustomerBindingOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        {
+                                            staffCustomerBindingOptions.find(
+                                                (option) => option.value === bindingMode,
+                                            )?.description
+                                        }
+                                    </p>
+                                </div>
+                                <Button type="submit" variant="outline" size="sm">
+                                    Speichern
+                                </Button>
+                            </form>
+                        </CardContent>
+                    </Card>
                 )}
 
                 {canManage && (
@@ -263,6 +393,7 @@ export default function Index({ customers, serviceTypes }: Props) {
                                     setData={createForm.setData}
                                     errors={createForm.errors}
                                     idPrefix="create"
+                                    staffMembers={staffMembers}
                                 />
                                 <div className="flex items-end md:col-span-2">
                                     <Button type="submit" disabled={createForm.processing}>
@@ -365,6 +496,7 @@ export default function Index({ customers, serviceTypes }: Props) {
                                                 errors={editForm.errors}
                                                 idPrefix={`edit-${customer.id}`}
                                                 showActive
+                                                staffMembers={staffMembers}
                                             />
                                             <div className="flex gap-2 md:col-span-2">
                                                 <Button type="submit" disabled={editForm.processing}>
@@ -443,6 +575,11 @@ export default function Index({ customers, serviceTypes }: Props) {
                                                                 fällig
                                                             </Badge>
                                                         )}
+                                                        {customer.primary_staff_name && (
+                                                            <Badge variant="outline">
+                                                                Stamm: {customer.primary_staff_name}
+                                                            </Badge>
+                                                        )}
                                                     </div>
                                                     <p className="text-sm text-muted-foreground">
                                                         {customer.address}, {customer.postal_code} {customer.city}
@@ -494,7 +631,45 @@ export default function Index({ customers, serviceTypes }: Props) {
                                                         : 'grid-rows-[0fr] opacity-0',
                                                 )}
                                             >
-                                                <div className="overflow-hidden">
+                                                <div className="overflow-hidden space-y-3">
+                                                    {isStaff && currentStaffMemberId && (
+                                                        <div className="rounded-lg border bg-muted/30 p-3">
+                                                            <p className="mb-2 text-sm font-medium">
+                                                                Stammansprechpartner
+                                                            </p>
+                                                            <p className="mb-2 text-sm text-muted-foreground">
+                                                                {customer.primary_staff_name
+                                                                    ? `Aktuell: ${customer.primary_staff_name}`
+                                                                    : 'Noch kein Stamm zugewiesen.'}
+                                                                {customer.backup_staff_name
+                                                                    ? ` · Vertretung: ${customer.backup_staff_name}`
+                                                                    : ''}
+                                                            </p>
+                                                            {customer.primary_staff_member_id ===
+                                                            currentStaffMemberId ? (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        claimPrimary(customer, 'release')
+                                                                    }
+                                                                >
+                                                                    Zuordnung lösen
+                                                                </Button>
+                                                            ) : (
+                                                                <Button
+                                                                    type="button"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        claimPrimary(customer, 'claim')
+                                                                    }
+                                                                >
+                                                                    Ich bin Stammansprechpartner
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                     <CustomerServiceAssignments
                                                         customerId={customer.id}
                                                         services={customer.recurring_services ?? []}

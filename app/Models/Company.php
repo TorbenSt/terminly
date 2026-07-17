@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StaffCustomerBinding;
 use Database\Factories\CompanyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,7 @@ class Company extends Model
         'email',
         'phone',
         'timezone',
+        'staff_customer_binding',
         'is_active',
         'is_sandbox',
         'sandbox_source_company_id',
@@ -36,6 +38,7 @@ class Company extends Model
     protected function casts(): array
     {
         return [
+            'staff_customer_binding' => StaffCustomerBinding::class,
             'is_active' => 'boolean',
             'is_sandbox' => 'boolean',
             'sandbox_snapshot_at' => 'datetime',

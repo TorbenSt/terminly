@@ -37,4 +37,7 @@ return [
     // The effective date is then advanced to the next weekday.
     'min_lead_days' => (int) env('SCHEDULING_MIN_LEAD_DAYS', 1),
 
+    // Default SLA / completion window after next_due_at (days).
+    'default_completion_window_days' => (int) env('SCHEDULING_DEFAULT_COMPLETION_WINDOW_DAYS', 14),
+
 ];

@@ -21,6 +21,7 @@ class ServiceType extends Model
         'is_recurring',
         'interval_days',
         'interval_months',
+        'completion_window_days',
         'description',
         'is_active',
     ];
@@ -30,6 +31,7 @@ class ServiceType extends Model
         return [
             'is_recurring' => 'boolean',
             'is_active' => 'boolean',
+            'completion_window_days' => 'integer',
         ];
     }
 

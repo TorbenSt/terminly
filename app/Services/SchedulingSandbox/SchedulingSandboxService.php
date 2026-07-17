@@ -6,6 +6,7 @@ use App\AI\GrokSchedulerService;
 use App\Enums\SchedulingSandboxMode;
 use App\Enums\SchedulingSandboxRunStatus;
 use App\Enums\SchedulingSandboxScenario;
+use App\Enums\StaffCustomerBinding;
 use App\Models\AppointmentProposal;
 use App\Models\Company;
 use App\Models\SchedulingSandboxRun;
@@ -180,6 +181,7 @@ class SchedulingSandboxService
             'slug' => $slug,
             'email' => "lab-{$user->id}@terminbuddy.test",
             'timezone' => $source?->timezone ?? 'Europe/Berlin',
+            'staff_customer_binding' => $source?->staff_customer_binding ?? StaffCustomerBinding::Prefer,
             'is_active' => true,
             'is_sandbox' => true,
             'sandbox_source_company_id' => $source?->id,

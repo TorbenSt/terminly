@@ -4,6 +4,7 @@ namespace App\Services\SchedulingSandbox;
 
 use App\Enums\AppointmentStatus;
 use App\Enums\SchedulingSandboxScenario;
+use App\Enums\StaffCustomerBinding;
 use App\Models\Appointment;
 use App\Models\Company;
 use App\Models\Customer;
@@ -23,6 +24,7 @@ class SchedulingSandboxScenarioSeeder
             SchedulingSandboxScenario::RegionalTwoStaff => $this->seedRegionalTwoStaff($company),
             SchedulingSandboxScenario::RegionalTour => $this->seedRegionalTour($company),
             SchedulingSandboxScenario::StaffQualification => $this->seedStaffQualification($company),
+            SchedulingSandboxScenario::PreferredStaffBinding => $this->seedPreferredStaffBinding($company),
             SchedulingSandboxScenario::RealLifeCapacity => $this->seedRealLifeCapacity($company),
         };
     }
@@ -166,6 +168,71 @@ class SchedulingSandboxScenarioSeeder
             'customers' => 1,
             'due_services' => 1,
             'confirmed_appointments' => 0,
+        ];
+    }
+
+    /**
+     * Preferred technician binding: strict with exceptions, green vs red deadline phases.
+     *
+     * @return array<string, int>
+     */
+    private function seedPreferredStaffBinding(Company $company): array
+    {
+        $company->update([
+            'staff_customer_binding' => StaffCustomerBinding::StrictWithExceptions,
+        ]);
+
+        $maintenance = $this->createServiceType($company, 'Wartung', 45, true, 90, 14);
+
+        $primary = $this->createStaff($company, 'Stamm Anna', [$maintenance->id]);
+        $other = $this->createStaff($company, 'Frei Ben', [$maintenance->id]);
+        $this->weekdayAvailability($primary);
+        $this->weekdayAvailability($other);
+
+        // Saturate the preferred technician so load balancing would normally pick Ben.
+        $confirmed = 0;
+        for ($i = 1; $i <= 12; $i++) {
+            $day = now()->addWeekdays($i)->setTime(9, 0);
+            $blockCustomer = $this->createCustomer($company, '10115');
+            Appointment::create([
+                'company_id' => $company->id,
+                'customer_id' => $blockCustomer->id,
+                'service_type_id' => $maintenance->id,
+                'staff_member_id' => $primary->id,
+                'status' => AppointmentStatus::Confirmed,
+                'scheduled_at' => $day,
+                'duration_minutes' => 60,
+                'travel_time_minutes' => 0,
+            ]);
+            $confirmed++;
+        }
+
+        // Green: due yesterday, 14-day window → ~13 days remaining → only Stamm/Vertretung.
+        $greenCustomer = $this->createCustomer($company, '10178');
+        $greenCustomer->update([
+            'primary_staff_member_id' => $primary->id,
+            'backup_staff_member_id' => $other->id,
+            'name' => 'Kunde Grün (Stamm)',
+        ]);
+        $this->createDueRecurring($company, $greenCustomer, $maintenance, now()->subDay());
+
+        // Red: due 12 days ago, 14-day window → ~2 days remaining → other qualified allowed.
+        $redCustomer = $this->createCustomer($company, '10119');
+        $redCustomer->update([
+            'primary_staff_member_id' => $primary->id,
+            'name' => 'Kunde Rot (Frist)',
+        ]);
+        $this->createDueRecurring($company, $redCustomer, $maintenance, now()->subDays(12));
+
+        return [
+            'staff' => 2,
+            'customers' => 14,
+            'due_services' => 2,
+            'confirmed_appointments' => $confirmed,
+            'primary_staff_id' => $primary->id,
+            'other_staff_id' => $other->id,
+            'green_customer_id' => $greenCustomer->id,
+            'red_customer_id' => $redCustomer->id,
         ];
     }
 
@@ -359,6 +426,7 @@ class SchedulingSandboxScenarioSeeder
         int $duration,
         bool $recurring,
         int $intervalDays,
+        int $completionWindowDays = 14,
     ): ServiceType {
         return ServiceType::create([
             'company_id' => $company->id,
@@ -366,6 +434,7 @@ class SchedulingSandboxScenarioSeeder
             'duration_minutes' => $duration,
             'is_recurring' => $recurring,
             'interval_days' => $intervalDays,
+            'completion_window_days' => $completionWindowDays,
             'is_active' => true,
         ]);
     }
@@ -411,14 +480,20 @@ class SchedulingSandboxScenarioSeeder
         ]);
     }
 
-    private function createDueRecurring(Company $company, Customer $customer, ServiceType $type): RecurringService
-    {
+    private function createDueRecurring(
+        Company $company,
+        Customer $customer,
+        ServiceType $type,
+        ?Carbon $nextDueAt = null,
+    ): RecurringService {
+        $nextDueAt ??= now()->subDay();
+
         return RecurringService::create([
             'company_id' => $company->id,
             'customer_id' => $customer->id,
             'service_type_id' => $type->id,
-            'last_completed_at' => now()->subDays($type->interval_days ?? 14),
-            'next_due_at' => now()->subDay(),
+            'last_completed_at' => $nextDueAt->copy()->subDays($type->interval_days ?? 14),
+            'next_due_at' => $nextDueAt,
             'is_active' => true,
         ]);
     }

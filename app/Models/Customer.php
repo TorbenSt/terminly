@@ -6,6 +6,7 @@ use App\Traits\BelongsToCompany;
 use Database\Factories\CustomerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends Model
@@ -26,6 +27,8 @@ class Customer extends Model
         'notes',
         'google_place_id',
         'is_active',
+        'primary_staff_member_id',
+        'backup_staff_member_id',
     ];
 
     protected function casts(): array
@@ -35,6 +38,16 @@ class Customer extends Model
             'longitude' => 'decimal:7',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function primaryStaffMember(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'primary_staff_member_id');
+    }
+
+    public function backupStaffMember(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'backup_staff_member_id');
     }
 
     public function recurringServices(): HasMany

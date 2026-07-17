@@ -8,6 +8,7 @@ enum SchedulingSandboxScenario: string
     case RegionalTwoStaff = 'regional_two_staff';
     case RegionalTour = 'regional_tour';
     case StaffQualification = 'staff_qualification';
+    case PreferredStaffBinding = 'preferred_staff_binding';
     case GrokFallback = 'grok_fallback';
     case RealLifeCapacity = 'real_life_capacity';
 
@@ -18,6 +19,7 @@ enum SchedulingSandboxScenario: string
             self::RegionalTwoStaff => 'Region: zwei Techniker, zwei PLZ-Cluster',
             self::RegionalTour => 'Regionale Tour',
             self::StaffQualification => 'Nur qualifizierter Mitarbeiter',
+            self::PreferredStaffBinding => 'Stammtechniker vs. knappe Frist',
             self::GrokFallback => 'Einfach (nur Fallback, kein Grok)',
             self::RealLifeCapacity => 'Real Life: volle Kalender',
         };
@@ -30,6 +32,7 @@ enum SchedulingSandboxScenario: string
             self::RegionalTwoStaff => '2 Techniker in verschiedenen PLZ-Regionen, 4 fällige Kunden.',
             self::RegionalTour => 'Bestehende PLZ-Tour (Berlin/Hamburg), neuer Kunde in gleicher Region.',
             self::StaffQualification => '2 Mitarbeiter mit unterschiedlichen Qualifikationen.',
+            self::PreferredStaffBinding => 'Strikt mit Ausnahmen: Stamm bei grüner Frist, freier Techniker bei roter Frist.',
             self::GrokFallback => 'Wie „Einfach“, erzwingt den deterministischen Fallback-Scheduler.',
             self::RealLifeCapacity => '5 Mitarbeiter (nur 2 qualifiziert), 6+ PLZ-Cluster, Kalender ~65 % voll über 4 Monate – Stress-Test für reale Terminfindung.',
         };

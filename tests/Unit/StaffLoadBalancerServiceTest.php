@@ -2,7 +2,10 @@
 
 namespace Tests\Unit;
 
+use App\DTOs\StaffBindingPreference;
 use App\Enums\AppointmentStatus;
+use App\Enums\DeadlinePhase;
+use App\Enums\StaffCustomerBinding;
 use App\Models\Appointment;
 use App\Models\Company;
 use App\Models\Customer;
@@ -160,6 +163,186 @@ class StaffLoadBalancerServiceTest extends TestCase
         );
 
         $this->assertSame($free->id, $result->first()['staff_id']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_prefer_mode_picks_primary_even_when_busier(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $company = Company::factory()->create(['staff_customer_binding' => StaffCustomerBinding::Prefer]);
+        $serviceType = ServiceType::factory()->create(['company_id' => $company->id]);
+        $primary = StaffMember::factory()->create(['company_id' => $company->id, 'name' => 'Primary']);
+        $other = StaffMember::factory()->create(['company_id' => $company->id, 'name' => 'Other']);
+        $primary->serviceTypes()->attach($serviceType->id);
+        $other->serviceTypes()->attach($serviceType->id);
+
+        $pool = collect([
+            [
+                'staff_id' => $primary->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 8,
+            ],
+            [
+                'staff_id' => $other->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 0,
+            ],
+        ]);
+
+        $batch = [];
+        $picked = app(StaffLoadBalancerService::class)->pickQualifiedStaff(
+            $pool,
+            $serviceType->id,
+            $company->id,
+            null,
+            $batch,
+            new StaffBindingPreference(
+                mode: StaffCustomerBinding::Prefer,
+                primaryStaffId: $primary->id,
+                phase: DeadlinePhase::Green,
+            ),
+        );
+
+        $this->assertSame($primary->id, $picked['staff_id']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_hard_mode_returns_null_without_preferred_staff(): void
+    {
+        $company = Company::factory()->create(['staff_customer_binding' => StaffCustomerBinding::Hard]);
+        $serviceType = ServiceType::factory()->create(['company_id' => $company->id]);
+        $other = StaffMember::factory()->create(['company_id' => $company->id]);
+        $other->serviceTypes()->attach($serviceType->id);
+
+        $pool = collect([
+            [
+                'staff_id' => $other->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 0,
+            ],
+        ]);
+
+        $batch = [];
+        $picked = app(StaffLoadBalancerService::class)->pickQualifiedStaff(
+            $pool,
+            $serviceType->id,
+            $company->id,
+            null,
+            $batch,
+            new StaffBindingPreference(
+                mode: StaffCustomerBinding::Hard,
+                primaryStaffId: 99999,
+                phase: DeadlinePhase::Green,
+            ),
+        );
+
+        $this->assertNull($picked);
+    }
+
+    public function test_strict_green_uses_backup_when_primary_unqualified(): void
+    {
+        $serviceType = ServiceType::factory()->create();
+        $company = $serviceType->company;
+        $company->update(['staff_customer_binding' => StaffCustomerBinding::StrictWithExceptions]);
+
+        $primary = StaffMember::factory()->create(['company_id' => $company->id]);
+        $backup = StaffMember::factory()->create(['company_id' => $company->id]);
+        $other = StaffMember::factory()->create(['company_id' => $company->id]);
+        $backup->serviceTypes()->attach($serviceType->id);
+        $other->serviceTypes()->attach($serviceType->id);
+
+        $pool = collect([
+            [
+                'staff_id' => $backup->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 3,
+            ],
+            [
+                'staff_id' => $other->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 0,
+            ],
+        ]);
+
+        $batch = [];
+        $picked = app(StaffLoadBalancerService::class)->pickQualifiedStaff(
+            $pool,
+            $serviceType->id,
+            $company->id,
+            null,
+            $batch,
+            new StaffBindingPreference(
+                mode: StaffCustomerBinding::StrictWithExceptions,
+                primaryStaffId: $primary->id,
+                backupStaffId: $backup->id,
+                phase: DeadlinePhase::Green,
+            ),
+        );
+
+        $this->assertSame($backup->id, $picked['staff_id']);
+    }
+
+    public function test_strict_red_allows_other_qualified_staff(): void
+    {
+        $serviceType = ServiceType::factory()->create();
+        $company = $serviceType->company;
+
+        $primary = StaffMember::factory()->create(['company_id' => $company->id]);
+        $other = StaffMember::factory()->create(['company_id' => $company->id]);
+        $primary->serviceTypes()->attach($serviceType->id);
+        $other->serviceTypes()->attach($serviceType->id);
+
+        $pool = collect([
+            [
+                'staff_id' => $primary->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 20,
+            ],
+            [
+                'staff_id' => $other->id,
+                'qualified_service_type_ids' => [$serviceType->id],
+                'upcoming_workload' => 0,
+            ],
+        ]);
+
+        $batch = [];
+        $picked = app(StaffLoadBalancerService::class)->pickQualifiedStaff(
+            $pool,
+            $serviceType->id,
+            $company->id,
+            null,
+            $batch,
+            new StaffBindingPreference(
+                mode: StaffCustomerBinding::StrictWithExceptions,
+                primaryStaffId: $primary->id,
+                phase: DeadlinePhase::Red,
+            ),
+        );
+
+        // Soft boost (500) is less than one extra appointment (100), so free tech wins.
+        $this->assertSame($other->id, $picked['staff_id']);
+    }
+
+    public function test_deadline_phase_thresholds(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+        $balancer = app(StaffLoadBalancerService::class);
+
+        $this->assertSame(
+            DeadlinePhase::Green,
+            $balancer->deadlinePhase(now()->subDays(2), 14),
+        );
+        $this->assertSame(
+            DeadlinePhase::Yellow,
+            $balancer->deadlinePhase(now()->subDays(8), 14),
+        );
+        $this->assertSame(
+            DeadlinePhase::Red,
+            $balancer->deadlinePhase(now()->subDays(12), 14),
+        );
 
         Carbon::setTestNow();
     }

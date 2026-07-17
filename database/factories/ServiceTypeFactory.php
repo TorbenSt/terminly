@@ -22,6 +22,7 @@ class ServiceTypeFactory extends Factory
             'is_recurring' => false,
             'interval_days' => null,
             'interval_months' => null,
+            'completion_window_days' => 14,
             'description' => fake()->optional()->sentence(),
             'is_active' => true,
         ];

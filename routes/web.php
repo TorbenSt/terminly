@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\SchedulingLabController;
 use App\Http\Controllers\Admin\SchedulingLabStaffCalendarController;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\Billing\SubscriptionController;
+use App\Http\Controllers\CompanySettingsController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerRecurringServiceController;
 use App\Http\Controllers\DashboardController;
@@ -34,10 +35,15 @@ Route::get('/dashboard', DashboardController::class)
 
 Route::middleware(['auth', 'company', 'subscribed'])->group(function () {
     Route::resource('customers', CustomerController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::post('/customers/{customer}/claim-primary-staff', [CustomerController::class, 'claimPrimaryStaff'])
+        ->name('customers.claim-primary-staff');
     Route::post('/customers/{customer}/recurring-services', [CustomerRecurringServiceController::class, 'store'])->name('customers.recurring-services.store');
     Route::patch('/customers/{customer}/recurring-services/{recurringService}', [CustomerRecurringServiceController::class, 'update'])->name('customers.recurring-services.update');
     Route::delete('/customers/{customer}/recurring-services/{recurringService}', [CustomerRecurringServiceController::class, 'destroy'])->name('customers.recurring-services.destroy');
     Route::resource('service-types', ServiceTypeController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::patch('/company/settings', [CompanySettingsController::class, 'update'])
+        ->middleware('role:company_admin')
+        ->name('company.settings.update');
     Route::get('/staff', [StaffMemberController::class, 'index'])->name('staff.index');
     Route::post('/staff', [StaffMemberController::class, 'store'])->name('staff.store');
     Route::patch('/staff/{staffMember}/availability', [StaffMemberController::class, 'updateAvailability'])->name('staff.availability');

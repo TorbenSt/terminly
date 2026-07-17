@@ -24,6 +24,7 @@ function ServiceTypeFormFields({
         is_recurring: boolean;
         interval_days: number | null;
         interval_months: number | null;
+        completion_window_days: number;
         description: string;
         is_active?: boolean;
     };
@@ -89,6 +90,21 @@ function ServiceTypeFormFields({
                     </div>
                 </>
             )}
+            <div>
+                <Label htmlFor={`${idPrefix}-window`}>Erfüllungsfenster (Tage)</Label>
+                <Input
+                    id={`${idPrefix}-window`}
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={data.completion_window_days}
+                    onChange={(e) => setData('completion_window_days', Number(e.target.value))}
+                    required
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                    Frist nach Fälligkeit für die Planung (z. B. 14).
+                </p>
+            </div>
             <div className="md:col-span-2">
                 <Label htmlFor={`${idPrefix}-description`}>Beschreibung</Label>
                 <Textarea
@@ -122,6 +138,7 @@ export default function Index({ serviceTypes }: Props) {
         is_recurring: false,
         interval_days: null as number | null,
         interval_months: null as number | null,
+        completion_window_days: 14,
         description: '',
     });
 
@@ -131,6 +148,7 @@ export default function Index({ serviceTypes }: Props) {
         is_recurring: false,
         interval_days: null as number | null,
         interval_months: null as number | null,
+        completion_window_days: 14,
         description: '',
         is_active: true,
     });
@@ -147,6 +165,7 @@ export default function Index({ serviceTypes }: Props) {
             is_recurring: service.is_recurring,
             interval_days: service.interval_days,
             interval_months: service.interval_months,
+            completion_window_days: service.completion_window_days ?? 14,
             description: service.description ?? '',
             is_active: service.is_active,
         });
@@ -244,6 +263,8 @@ export default function Index({ serviceTypes }: Props) {
                                                             {service.interval_months && ` (${service.interval_months} Mon.)`}
                                                         </>
                                                     )}
+                                                    {' '}
+                                                    · Fenster {service.completion_window_days ?? 14} Tage
                                                 </p>
                                                 {service.description && (
                                                     <p className="mt-1 text-sm text-muted-foreground">

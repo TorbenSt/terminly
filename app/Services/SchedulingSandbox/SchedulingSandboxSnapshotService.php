@@ -45,6 +45,7 @@ class SchedulingSandboxSnapshotService
                     'is_recurring' => $type->is_recurring,
                     'interval_days' => $type->interval_days,
                     'interval_months' => $type->interval_months,
+                    'completion_window_days' => $type->completion_window_days ?? 14,
                     'description' => $type->description,
                     'is_active' => true,
                 ]);
@@ -122,6 +123,12 @@ class SchedulingSandboxSnapshotService
                     'longitude' => $customer->longitude,
                     'notes' => $customer->notes,
                     'is_active' => true,
+                    'primary_staff_member_id' => isset($customer->primary_staff_member_id)
+                        ? ($idMap['staff'][$customer->primary_staff_member_id] ?? null)
+                        : null,
+                    'backup_staff_member_id' => isset($customer->backup_staff_member_id)
+                        ? ($idMap['staff'][$customer->backup_staff_member_id] ?? null)
+                        : null,
                 ]);
                 $idMap['customers'][$customer->id] = $clone->id;
             }

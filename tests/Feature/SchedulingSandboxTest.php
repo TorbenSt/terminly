@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\AppointmentStatus;
 use App\Enums\SchedulingSandboxRunStatus;
 use App\Enums\SchedulingSandboxScenario;
+use App\Enums\StaffCustomerBinding;
 use App\Models\Appointment;
 use App\Models\AppointmentProposal;
 use App\Models\Company;
@@ -347,6 +348,69 @@ class SchedulingSandboxTest extends TestCase
             $busyCount,
             $freeCount,
             "Less-loaded technician ({$free->name}) should receive more new proposals than busy ({$busy->name})",
+        );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_preferred_staff_binding_scenario_honors_deadline_phases(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::PreferredStaffBinding, false);
+        $run = $service->activeRunFor($user);
+        $company = $run->company;
+
+        $this->assertSame(
+            StaffCustomerBinding::StrictWithExceptions,
+            $company->staff_customer_binding,
+        );
+
+        $counts = $run->snapshot_meta['counts'] ?? [];
+        $this->assertSame(2, $counts['staff'] ?? null);
+        $this->assertSame(2, $counts['due_services'] ?? null);
+
+        $primaryId = (int) ($counts['primary_staff_id'] ?? 0);
+        $otherId = (int) ($counts['other_staff_id'] ?? 0);
+        $greenCustomerId = (int) ($counts['green_customer_id'] ?? 0);
+        $redCustomerId = (int) ($counts['red_customer_id'] ?? 0);
+
+        $this->assertGreaterThan(0, $primaryId);
+        $this->assertGreaterThan(0, $otherId);
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $this->assertEquals(SchedulingSandboxRunStatus::Completed, $run->status);
+
+        $proposals = AppointmentProposal::query()
+            ->whereHas('appointment', fn ($q) => $q->where('company_id', $company->id))
+            ->with('appointment')
+            ->get();
+
+        $this->assertCount(2, $proposals);
+
+        $greenProposal = $proposals->first(
+            fn (AppointmentProposal $p) => (int) $p->appointment->customer_id === $greenCustomerId,
+        );
+        $redProposal = $proposals->first(
+            fn (AppointmentProposal $p) => (int) $p->appointment->customer_id === $redCustomerId,
+        );
+
+        $this->assertNotNull($greenProposal);
+        $this->assertNotNull($redProposal);
+
+        $this->assertSame(
+            $primaryId,
+            (int) $greenProposal->staff_member_id,
+            'Green deadline must stay with preferred technician despite high load',
+        );
+        $this->assertSame(
+            $otherId,
+            (int) $redProposal->staff_member_id,
+            'Red deadline may leave preferred technician for a less-loaded qualified tech',
         );
 
         Carbon::setTestNow();

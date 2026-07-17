@@ -23,6 +23,7 @@ class CompanyFactory extends Factory
             'email' => fake()->companyEmail(),
             'phone' => fake()->phoneNumber(),
             'timezone' => 'Europe/Berlin',
+            'staff_customer_binding' => 'prefer',
             'is_active' => true,
             // Neue Firmen starten wie in der App mit laufendem Testzeitraum.
             'trial_ends_at' => now()->addDays(30),

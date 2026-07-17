@@ -33,14 +33,22 @@ class ClusteringService
         return $dueServices
             ->groupBy(fn (RecurringService $service) => $this->regionKey($service->customer->postal_code))
             ->map(function (Collection $group, string $region) {
-                $jobs = $group->map(fn (RecurringService $service) => [
-                    'recurring_id' => $service->id,
-                    'customer_id' => $service->customer_id,
-                    'postal_code' => $service->customer->postal_code,
-                    'service_type_id' => $service->service_type_id,
-                    'duration_min' => $service->serviceType->duration_minutes,
-                    'next_due_at' => $service->next_due_at->toDateString(),
-                ]);
+                $jobs = $group->map(function (RecurringService $service) {
+                    $window = (int) ($service->serviceType->completion_window_days
+                        ?? config('scheduling.default_completion_window_days', 14));
+
+                    return [
+                        'recurring_id' => $service->id,
+                        'customer_id' => $service->customer_id,
+                        'postal_code' => $service->customer->postal_code,
+                        'service_type_id' => $service->service_type_id,
+                        'duration_min' => $service->serviceType->duration_minutes,
+                        'next_due_at' => $service->next_due_at->toDateString(),
+                        'completion_window_days' => $window,
+                        'primary_staff_id' => $service->customer->primary_staff_member_id,
+                        'backup_staff_id' => $service->customer->backup_staff_member_id,
+                    ];
+                });
 
                 return new PostalCluster(
                     region: $region,

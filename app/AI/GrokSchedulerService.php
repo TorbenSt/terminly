@@ -4,9 +4,12 @@ namespace App\AI;
 
 use App\AI\Prompts\SchedulerSystemPrompt;
 use App\DTOs\SchedulingContext;
+use App\DTOs\StaffBindingPreference;
+use App\Enums\StaffCustomerBinding;
 use App\Models\Appointment;
 use App\Models\AppointmentNegotiation;
 use App\Models\Company;
+use App\Models\Customer;
 use App\Models\RecurringService;
 use App\Models\StaffMember;
 use App\Services\AvailabilityService;
@@ -83,6 +86,9 @@ class GrokSchedulerService
             staff: $staff,
             negotiationFeedback: $negotiationFeedback,
             existingAppointments: $existingAppointments,
+            staffCustomerBinding: $company->staff_customer_binding instanceof StaffCustomerBinding
+                ? $company->staff_customer_binding
+                : StaffCustomerBinding::Prefer,
         );
     }
 
@@ -181,12 +187,14 @@ class GrokSchedulerService
                     $staffId = $negotiationAppointment->staff_member_id;
                     $batchAssignments[$staffId] = ((int) ($batchAssignments[$staffId] ?? 0)) + 1;
                 } else {
+                    $preference = $this->preferenceFromJob($context, $job);
                     $staff = $this->loadBalancer->pickQualifiedStaff(
                         $context->staff,
                         $job['service_type_id'] ?? null,
                         $context->companyId,
                         $postalCode,
                         $batchAssignments,
+                        $preference,
                     );
 
                     if (! $staff) {
@@ -273,7 +281,74 @@ class GrokSchedulerService
             $context->staff,
             $context->companyId,
             $this->postalCodesByCustomer($context),
+            $this->preferencesByCustomer($context),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $job
+     */
+    private function preferenceFromJob(SchedulingContext $context, array $job): StaffBindingPreference
+    {
+        $window = (int) ($job['completion_window_days']
+            ?? config('scheduling.default_completion_window_days', 14));
+
+        return new StaffBindingPreference(
+            mode: $context->staffCustomerBinding,
+            primaryStaffId: isset($job['primary_staff_id']) ? (int) $job['primary_staff_id'] : null,
+            backupStaffId: isset($job['backup_staff_id']) ? (int) $job['backup_staff_id'] : null,
+            phase: $this->loadBalancer->deadlinePhase(
+                isset($job['next_due_at']) ? Carbon::parse($job['next_due_at']) : null,
+                $window,
+            ),
+        );
+    }
+
+    /**
+     * @return array<int, StaffBindingPreference>
+     */
+    private function preferencesByCustomer(SchedulingContext $context): array
+    {
+        $map = [];
+
+        foreach ($context->clusters as $cluster) {
+            foreach ($cluster['jobs'] ?? [] as $job) {
+                $customerId = (int) ($job['customer_id'] ?? 0);
+                if ($customerId > 0 && ! isset($map[$customerId])) {
+                    $map[$customerId] = $this->preferenceFromJob($context, $job);
+                }
+            }
+        }
+
+        // Cover assignments that may not be in current due clusters (e.g. negotiation).
+        $customerIds = collect($map)->keys()
+            ->merge(
+                $context->negotiationFeedback->pluck('customer_id')
+            )
+            ->unique()
+            ->filter()
+            ->values();
+
+        $missing = $customerIds->reject(fn ($id) => isset($map[(int) $id]));
+
+        if ($missing->isNotEmpty()) {
+            $customers = Customer::query()
+                ->where('company_id', $context->companyId)
+                ->whereIn('id', $missing->all())
+                ->get()
+                ->keyBy('id');
+
+            $company = Company::query()->find($context->companyId);
+
+            foreach ($missing as $customerId) {
+                $customer = $customers->get((int) $customerId);
+                if ($company && $customer) {
+                    $map[(int) $customerId] = $this->loadBalancer->preferenceFor($company, $customer);
+                }
+            }
+        }
+
+        return $map;
     }
 
     /**

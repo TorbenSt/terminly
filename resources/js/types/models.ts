@@ -19,6 +19,10 @@ export interface Customer {
     city: string;
     notes: string | null;
     is_active: boolean;
+    primary_staff_member_id?: number | null;
+    backup_staff_member_id?: number | null;
+    primary_staff_name?: string | null;
+    backup_staff_name?: string | null;
     recurring_services?: CustomerRecurringService[];
 }
 
@@ -29,6 +33,7 @@ export interface ServiceType {
     is_recurring: boolean;
     interval_days: number | null;
     interval_months: number | null;
+    completion_window_days?: number;
     description: string | null;
     is_active: boolean;
 }

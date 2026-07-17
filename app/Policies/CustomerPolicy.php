@@ -27,6 +27,12 @@ class CustomerPolicy
         return $user->isCompanyAdmin() && $user->company_id === $customer->company_id;
     }
 
+    public function claimPrimaryStaff(User $user, Customer $customer): bool
+    {
+        return $user->isStaff()
+            && $user->company_id === $customer->company_id;
+    }
+
     public function delete(User $user, Customer $customer): bool
     {
         return $user->isCompanyAdmin() && $user->company_id === $customer->company_id;

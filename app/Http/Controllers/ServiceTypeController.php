@@ -29,8 +29,12 @@ class ServiceTypeController extends Controller
             'is_recurring' => ['boolean'],
             'interval_days' => ['nullable', 'integer', 'min:1'],
             'interval_months' => ['nullable', 'integer', 'min:1'],
+            'completion_window_days' => ['nullable', 'integer', 'min:1', 'max:365'],
             'description' => ['nullable', 'string'],
         ]);
+
+        $validated['completion_window_days'] = $validated['completion_window_days']
+            ?? (int) config('scheduling.default_completion_window_days', 14);
 
         ServiceType::create($validated);
 
@@ -47,6 +51,7 @@ class ServiceTypeController extends Controller
             'is_recurring' => ['boolean'],
             'interval_days' => ['nullable', 'integer', 'min:1'],
             'interval_months' => ['nullable', 'integer', 'min:1'],
+            'completion_window_days' => ['required', 'integer', 'min:1', 'max:365'],
             'description' => ['nullable', 'string'],
             'is_active' => ['boolean'],
         ]);
