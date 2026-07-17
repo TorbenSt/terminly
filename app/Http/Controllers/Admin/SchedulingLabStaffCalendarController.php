@@ -6,6 +6,7 @@ use App\Enums\AppointmentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\AppointmentProposal;
+use App\Models\Customer;
 use App\Models\StaffMember;
 use App\Services\AvailabilityService;
 use App\Services\SchedulingSandbox\SchedulingSandboxService;
@@ -135,6 +136,17 @@ class SchedulingLabStaffCalendarController extends Controller
                 'id' => $staffMember->id,
                 'name' => $staffMember->name,
                 'services' => $staffMember->serviceTypes->pluck('name'),
+                'stamm_customers' => Customer::query()
+                    ->where('company_id', $staffMember->company_id)
+                    ->where('primary_staff_member_id', $staffMember->id)
+                    ->orderBy('name')
+                    ->get(['id', 'name'])
+                    ->map(fn (Customer $customer) => [
+                        'id' => $customer->id,
+                        'name' => $customer->name,
+                    ])
+                    ->values()
+                    ->all(),
             ],
             'slots' => $slots,
             'appointments' => $appointments,

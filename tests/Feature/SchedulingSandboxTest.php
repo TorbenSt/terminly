@@ -416,6 +416,66 @@ class SchedulingSandboxTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_real_life_mixed_scenario_seeds_heterogeneous_fleet(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::RealLifeMixed, false);
+        $run = $service->activeRunFor($user);
+        $company = $run->company;
+
+        $this->assertSame(StaffCustomerBinding::Prefer, $company->staff_customer_binding);
+        $this->assertSame(20, $company->staffMembers()->count());
+        $this->assertSame(4, $company->serviceTypes()->count());
+        $this->assertSame(5, $company->recurringServices()->where('next_due_at', '<=', now())->count());
+        $this->assertGreaterThanOrEqual(
+            4,
+            $company->customers()->whereNotNull('primary_staff_member_id')->count(),
+        );
+
+        $availabilityVariants = $company->staffMembers()
+            ->withCount('availabilities')
+            ->get()
+            ->pluck('availabilities_count')
+            ->unique()
+            ->count();
+        $this->assertGreaterThanOrEqual(2, $availabilityVariants);
+
+        $counts = $run->snapshot_meta['counts'] ?? [];
+        $this->assertSame(20, $counts['staff'] ?? null);
+        $this->assertSame(5, $counts['due_services'] ?? null);
+
+        $inspector = $service->inspectorData($run);
+        $staffWithStamm = collect($inspector['staff'])->filter(
+            fn (array $member) => count($member['stamm_customers'] ?? []) > 0,
+        );
+        $this->assertGreaterThanOrEqual(3, $staffWithStamm->count());
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $this->assertEquals(SchedulingSandboxRunStatus::Completed, $run->status);
+        $this->assertSame(5, $run->messages()->count());
+
+        $proposals = AppointmentProposal::query()
+            ->whereHas('appointment', fn ($q) => $q->where('company_id', $company->id))
+            ->with(['staffMember.serviceTypes', 'appointment.serviceType'])
+            ->get();
+
+        $this->assertCount(5, $proposals);
+
+        foreach ($proposals as $proposal) {
+            $this->assertTrue(
+                $proposal->staffMember->serviceTypes->contains('id', $proposal->appointment->service_type_id),
+                "{$proposal->staffMember->name} must be qualified for the assigned service",
+            );
+        }
+
+        Carbon::setTestNow();
+    }
+
     public function test_scheduling_cannot_be_started_twice_on_same_run(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));

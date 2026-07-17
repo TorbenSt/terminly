@@ -26,6 +26,7 @@ class SchedulingSandboxScenarioSeeder
             SchedulingSandboxScenario::StaffQualification => $this->seedStaffQualification($company),
             SchedulingSandboxScenario::PreferredStaffBinding => $this->seedPreferredStaffBinding($company),
             SchedulingSandboxScenario::RealLifeCapacity => $this->seedRealLifeCapacity($company),
+            SchedulingSandboxScenario::RealLifeMixed => $this->seedRealLifeMixed($company),
         };
     }
 
@@ -212,7 +213,6 @@ class SchedulingSandboxScenarioSeeder
         $greenCustomer->update([
             'primary_staff_member_id' => $primary->id,
             'backup_staff_member_id' => $other->id,
-            'name' => 'Kunde Grün (Stamm)',
         ]);
         $this->createDueRecurring($company, $greenCustomer, $maintenance, now()->subDay());
 
@@ -220,7 +220,6 @@ class SchedulingSandboxScenarioSeeder
         $redCustomer = $this->createCustomer($company, '10119');
         $redCustomer->update([
             'primary_staff_member_id' => $primary->id,
-            'name' => 'Kunde Rot (Frist)',
         ]);
         $this->createDueRecurring($company, $redCustomer, $maintenance, now()->subDays(12));
 
@@ -297,6 +296,288 @@ class SchedulingSandboxScenarioSeeder
             'plz_clusters' => count($plzClusters),
             'qualified_staff' => count($qualified),
         ];
+    }
+
+    /**
+     * Dense mixed fleet: many techs, heterogeneous skills/hours, Stamm bindings, mixed SLAs.
+     *
+     * @return array<string, int>
+     */
+    private function seedRealLifeMixed(Company $company): array
+    {
+        // Deterministic skill/availability patterns so lab + tests stay reproducible.
+        $company->update([
+            'staff_customer_binding' => StaffCustomerBinding::Prefer,
+        ]);
+
+        $wartung = $this->createServiceType($company, 'Wartung', 60, true, 90, 14);
+        $inspektion = $this->createServiceType($company, 'Inspektion', 90, true, 180, 21);
+        $stoerung = $this->createServiceType($company, 'Störung', 45, true, 30, 7);
+        $montage = $this->createServiceType($company, 'Montage', 120, true, 365, 30);
+
+        $serviceTypes = [$wartung, $inspektion, $stoerung, $montage];
+        $serviceIds = array_map(fn (ServiceType $type) => $type->id, $serviceTypes);
+
+        $staffNames = [
+            'Alex Berger', 'Birgit Braun', 'Chris Dietz', 'Dana Engel', 'Erik Faust',
+            'Fiona Graf', 'Gregor Hahn', 'Hanna Ibel', 'Ivo Jung', 'Jana Klein',
+            'Klaus Lang', 'Lena Marx', 'Moritz Neuhaus', 'Nina Orth', 'Otto Pohl',
+            'Paula Quinn', 'Ralf Steiner', 'Sara Thiel', 'Tim Urban', 'Vera Wolff',
+        ];
+
+        /** @var list<StaffMember> $staffPool */
+        $staffPool = [];
+        foreach ($staffNames as $index => $name) {
+            $skillCount = 1 + ($index % 3);
+            $skills = [];
+            for ($i = 0; $i < $skillCount; $i++) {
+                $skills[] = $serviceIds[($index + $i * 2) % count($serviceIds)];
+            }
+            $skills = array_values(array_unique($skills));
+
+            $staff = $this->createStaff($company, $name, $skills);
+            $this->mixedAvailability($staff, $index % 3);
+            $staffPool[] = $staff;
+        }
+
+        // Guarantee every service has at least 3 qualified technicians.
+        foreach ($serviceTypes as $typeIndex => $type) {
+            $qualifiedIds = [];
+            foreach ($staffPool as $staff) {
+                $staff->loadMissing('serviceTypes:id');
+                if ($staff->serviceTypes->contains('id', $type->id)) {
+                    $qualifiedIds[] = $staff->id;
+                }
+            }
+
+            $needed = 3 - count($qualifiedIds);
+            for ($i = 0; $i < $needed; $i++) {
+                $candidate = $staffPool[($typeIndex * 3 + $i * 7) % count($staffPool)];
+                if (! $candidate->serviceTypes->contains('id', $type->id)) {
+                    $candidate->serviceTypes()->attach($type->id);
+                    $candidate->unsetRelation('serviceTypes');
+                    $candidate->load('serviceTypes:id');
+                }
+            }
+        }
+
+        foreach ($staffPool as $staff) {
+            $staff->load('serviceTypes:id,name,duration_minutes');
+        }
+
+        $plzClusters = [
+            ['10115', '10117', '10119', '10178'], // Berlin
+            ['20095', '20097', '20144'], // Hamburg
+            ['80331', '80335', '80336'], // München
+            ['50667', '50668', '50670'], // Köln
+            ['60311', '60313', '60316'], // Frankfurt
+            ['70173', '70174', '70176'], // Stuttgart
+            ['90402', '90403', '90408'], // Nürnberg
+            ['04109', '04105', '04229'], // Leipzig
+        ];
+
+        $customersByCluster = [];
+        foreach ($plzClusters as $clusterIndex => $plzs) {
+            $customersByCluster[$clusterIndex] = [];
+            foreach ($plzs as $plz) {
+                $customersByCluster[$clusterIndex][] = $this->createCustomer($company, $plz);
+            }
+        }
+
+        $confirmed = $this->seedMixedBusyCalendars(
+            $company,
+            $staffPool,
+            $customersByCluster,
+            $serviceTypes,
+        );
+
+        $staffFor = function (int $serviceTypeId) use ($staffPool): array {
+            return array_values(array_filter(
+                $staffPool,
+                fn (StaffMember $staff) => $staff->serviceTypes->contains('id', $serviceTypeId),
+            ));
+        };
+
+        $wartungStaff = $staffFor($wartung->id);
+        $inspektionStaff = $staffFor($inspektion->id);
+        $montageStaff = $staffFor($montage->id);
+
+        $dueSpecs = [
+            [
+                'plz' => '10178',
+                'type' => $wartung,
+                'due' => now()->subDay(),
+                'primary' => $wartungStaff[0] ?? $staffPool[0],
+                'backup' => $wartungStaff[1] ?? null,
+            ],
+            [
+                'plz' => '20095',
+                'type' => $inspektion,
+                'due' => now()->subDays(8),
+                'primary' => $inspektionStaff[0] ?? $staffPool[1],
+                'backup' => null,
+            ],
+            [
+                'plz' => '80331',
+                'type' => $stoerung,
+                'due' => now()->subDays(5),
+                'primary' => null,
+                'backup' => null,
+            ],
+            [
+                'plz' => '50667',
+                'type' => $wartung,
+                'due' => now()->subDays(12),
+                'primary' => $wartungStaff[min(2, count($wartungStaff) - 1)] ?? $staffPool[2],
+                'backup' => $wartungStaff[0] ?? null,
+            ],
+            [
+                'plz' => '60311',
+                'type' => $montage,
+                'due' => now()->subDays(3),
+                'primary' => $montageStaff[0] ?? $staffPool[3],
+                'backup' => $montageStaff[1] ?? null,
+            ],
+        ];
+
+        foreach ($dueSpecs as $spec) {
+            $customer = $this->createCustomer($company, $spec['plz']);
+            $customer->update([
+                'primary_staff_member_id' => $spec['primary']?->id,
+                'backup_staff_member_id' => $spec['backup']?->id,
+            ]);
+            $this->createDueRecurring($company, $customer, $spec['type'], $spec['due']);
+        }
+
+        $fillerCount = array_sum(array_map('count', $customersByCluster));
+
+        return [
+            'staff' => count($staffPool),
+            'customers' => $fillerCount + count($dueSpecs),
+            'due_services' => count($dueSpecs),
+            'confirmed_appointments' => $confirmed,
+            'plz_clusters' => count($plzClusters),
+            'service_types' => count($serviceTypes),
+            'stamm_bindings' => collect($dueSpecs)->filter(fn (array $spec) => $spec['primary'] !== null)->count(),
+        ];
+    }
+
+    /**
+     * @param  list<StaffMember>  $staffPool
+     * @param  array<int, list<Customer>>  $customersByCluster
+     * @param  list<ServiceType>  $serviceTypes
+     */
+    private function seedMixedBusyCalendars(
+        Company $company,
+        array $staffPool,
+        array $customersByCluster,
+        array $serviceTypes,
+    ): int {
+        $patternsByLoad = [
+            'high' => [
+                ['08:00', '10:00', '13:00'],
+                ['08:00', '09:30', '11:30', '14:00'],
+            ],
+            'medium' => [
+                ['09:00', '13:00'],
+                ['08:00', '11:00', '14:30'],
+            ],
+            'low' => [
+                ['10:00'],
+                ['08:00', '14:00'],
+            ],
+        ];
+
+        $clusterCount = count($customersByCluster);
+        $rows = [];
+        $now = now();
+        $cursor = $now->copy()->startOfDay();
+        $end = $now->copy()->addWeeks(8)->endOfDay();
+        $dayIndex = 0;
+
+        while ($cursor->lte($end)) {
+            if ($cursor->isWeekday()) {
+                foreach ($staffPool as $staffIndex => $staff) {
+                    $load = match ($staffIndex % 3) {
+                        0 => 'high',
+                        1 => 'medium',
+                        default => 'low',
+                    };
+
+                    // Skip ~30% of days for low-load techs.
+                    if ($load === 'low' && ($dayIndex + $staffIndex) % 3 === 0) {
+                        continue;
+                    }
+
+                    $patterns = $patternsByLoad[$load];
+                    $pattern = $cursor->isFriday()
+                        ? array_slice($patterns[0], 0, max(1, (int) floor(count($patterns[0]) / 2)))
+                        : $patterns[$dayIndex % count($patterns)];
+
+                    $qualifiedTypes = $staff->serviceTypes;
+                    if ($qualifiedTypes->isEmpty()) {
+                        continue;
+                    }
+
+                    $serviceType = $qualifiedTypes[$dayIndex % $qualifiedTypes->count()];
+                    $clusterIndex = ($staffIndex + $dayIndex) % $clusterCount;
+
+                    $this->appendDayAppointments(
+                        $rows,
+                        $company,
+                        $staff,
+                        $customersByCluster[$clusterIndex],
+                        $serviceType,
+                        $cursor,
+                        $pattern,
+                        (int) $serviceType->duration_minutes,
+                    );
+                }
+
+                $dayIndex++;
+            }
+
+            $cursor->addDay();
+        }
+
+        foreach (array_chunk($rows, 250) as $chunk) {
+            Appointment::query()->insert($chunk);
+        }
+
+        return count($rows);
+    }
+
+    private function mixedAvailability(StaffMember $staff, int $variant): void
+    {
+        $schedules = match ($variant) {
+            0 => [ // classic full week
+                [1, '08:00:00', '16:00:00'],
+                [2, '08:00:00', '16:00:00'],
+                [3, '08:00:00', '16:00:00'],
+                [4, '08:00:00', '16:00:00'],
+                [5, '08:00:00', '16:00:00'],
+            ],
+            1 => [ // late shift Tue–Fri
+                [2, '10:00:00', '18:00:00'],
+                [3, '10:00:00', '18:00:00'],
+                [4, '10:00:00', '18:00:00'],
+                [5, '10:00:00', '18:00:00'],
+            ],
+            default => [ // short week Mon–Wed
+                [1, '08:00:00', '15:00:00'],
+                [2, '08:00:00', '15:00:00'],
+                [3, '08:00:00', '15:00:00'],
+            ],
+        };
+
+        foreach ($schedules as [$day, $start, $end]) {
+            StaffAvailability::create([
+                'staff_member_id' => $staff->id,
+                'day_of_week' => $day,
+                'start_time' => $start,
+                'end_time' => $end,
+            ]);
+        }
     }
 
     /**

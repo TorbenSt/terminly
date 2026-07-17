@@ -39,6 +39,7 @@ interface Props {
         id: number;
         name: string;
         services: string[];
+        stamm_customers: { id: number; name: string }[];
     };
     slots: { start: string; end: string }[];
     appointments: CalendarEntry[];
@@ -101,11 +102,20 @@ export default function StaffCalendar({
                     </Link>
                 </div>
 
-                {staffMember.services.length > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                        Qualifikationen: {staffMember.services.join(', ')}
-                    </p>
-                )}
+                <div className="space-y-1 text-sm">
+                    {(staffMember.services?.length ?? 0) > 0 && (
+                        <p>
+                            <span className="text-muted-foreground">Quali:</span>{' '}
+                            {staffMember.services.join(', ')}
+                        </p>
+                    )}
+                    {(staffMember.stamm_customers?.length ?? 0) > 0 && (
+                        <p>
+                            <span className="text-muted-foreground">Stammkunden:</span>{' '}
+                            {staffMember.stamm_customers.map((c) => c.name).join(', ')}
+                        </p>
+                    )}
+                </div>
 
                 <YearCalendar
                     selectedDate={date}

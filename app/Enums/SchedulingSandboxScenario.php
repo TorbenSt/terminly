@@ -11,6 +11,7 @@ enum SchedulingSandboxScenario: string
     case PreferredStaffBinding = 'preferred_staff_binding';
     case GrokFallback = 'grok_fallback';
     case RealLifeCapacity = 'real_life_capacity';
+    case RealLifeMixed = 'real_life_mixed';
 
     public function label(): string
     {
@@ -22,6 +23,7 @@ enum SchedulingSandboxScenario: string
             self::PreferredStaffBinding => 'Stammtechniker vs. knappe Frist',
             self::GrokFallback => 'Einfach (nur Fallback, kein Grok)',
             self::RealLifeCapacity => 'Real Life: volle Kalender',
+            self::RealLifeMixed => 'Real Life: gemischt (20 MA)',
         };
     }
 
@@ -35,6 +37,7 @@ enum SchedulingSandboxScenario: string
             self::PreferredStaffBinding => 'Strikt mit Ausnahmen: 2 fällige Kunden (grün → Stamm, rot → freier Techniker) → 2 Vorschlags-Mails.',
             self::GrokFallback => 'Wie „Einfach“, erzwingt den deterministischen Fallback-Scheduler.',
             self::RealLifeCapacity => '5 Mitarbeiter (nur 2 qualifiziert), 6+ PLZ-Cluster, Kalender ~65 % voll über 4 Monate – Stress-Test für reale Terminfindung.',
+            self::RealLifeMixed => '20 Mitarbeiter mit zufälligen Qualifikationen/Arbeitszeiten, 4 Servicearten, 5 fällige Kunden (Stamm, Fristen, Regionen), ungleich volle Kalender.',
         };
     }
 

@@ -22,6 +22,17 @@ interface SandboxMessage {
     meta: {
         public_url?: string;
         customer_name?: string;
+        customer_postal_code?: string;
+        customer_city?: string;
+        service_name?: string;
+        service_duration_minutes?: number;
+        completion_window_days?: number;
+        next_due_at?: string;
+        deadline_phase?: string;
+        staff_name?: string;
+        staff_qualifications?: string[];
+        primary_staff_name?: string;
+        backup_staff_name?: string;
         options?: { number: number; iso: string }[];
     } | null;
     created_at: string;
@@ -39,6 +50,12 @@ interface SandboxRun {
     validation_results: {
         proposal_id: number;
         customer: string;
+        postal_code?: string;
+        service?: string;
+        staff?: string | null;
+        staff_qualifications?: string[];
+        primary_staff?: string | null;
+        backup_staff?: string | null;
         checks: { key: string; label: string; passed: boolean; detail: string }[];
     }[] | null;
     source_company: { id: number; name: string } | null;
@@ -50,7 +67,26 @@ interface Inspector {
     company: { id: number; name: string; is_sandbox: boolean; source_name?: string; snapshot_at?: string };
     counts: { staff: number; customers: number; due_services: number; confirmed_appointments: number };
     clusters: { region: string; jobs: number; suggested_date: string | null }[];
-    staff: { id: number; name: string; services: string[] }[];
+    staff: {
+        id: number;
+        name: string;
+        services: string[];
+        availability_label: string | null;
+        stamm_customers: { id: number; name: string }[];
+    }[];
+    due_jobs: {
+        customer_name: string;
+        postal_code: string;
+        city: string | null;
+        service: string;
+        duration_minutes: number;
+        next_due_at: string;
+        completion_window_days: number;
+        deadline_phase: string;
+        deadline_phase_label: string;
+        primary_staff: string | null;
+        backup_staff: string | null;
+    }[];
     customers: { id: number; name: string; postal_code: string; email: string }[];
 }
 
@@ -66,6 +102,40 @@ interface Props {
     inspector: Inspector | null;
     scenarios: ScenarioOption[];
     companies: CompanyOption[];
+}
+
+function MetaRows({
+    rows,
+}: {
+    rows: { label: string; value?: string | number | null }[];
+}) {
+    const visible = rows.filter((row) => row.value !== null && row.value !== undefined && row.value !== '');
+
+    if (visible.length === 0) {
+        return null;
+    }
+
+    return (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
+            {visible.map((row) => (
+                <div key={row.label} className="contents">
+                    <dt className="text-muted-foreground">{row.label}:</dt>
+                    <dd className="min-w-0 break-words font-medium text-foreground">{row.value}</dd>
+                </div>
+            ))}
+        </dl>
+    );
+}
+
+function deadlinePhaseLabel(phase?: string | null): string | null {
+    if (!phase) return null;
+    return (
+        {
+            green: 'Grün',
+            yellow: 'Gelb',
+            red: 'Rot',
+        }[phase] ?? phase
+    );
 }
 
 export default function Index({
@@ -388,9 +458,41 @@ export default function Index({
                                             : 'hover:bg-muted/50'
                                     }`}
                                 >
-                                    <p className="font-medium">{message.subject}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                        {message.meta?.customer_name ?? message.type} ·{' '}
+                                    <p className="mb-2 font-medium">{message.subject}</p>
+                                    <MetaRows
+                                        rows={[
+                                            { label: 'Name', value: message.meta?.customer_name },
+                                            {
+                                                label: 'PLZ',
+                                                value: message.meta?.customer_postal_code
+                                                    ? `${message.meta.customer_postal_code}${
+                                                          message.meta.customer_city
+                                                              ? ` ${message.meta.customer_city}`
+                                                              : ''
+                                                      }`
+                                                    : null,
+                                            },
+                                            { label: 'Service', value: message.meta?.service_name },
+                                            { label: 'Techniker', value: message.meta?.staff_name },
+                                            {
+                                                label: 'Quali',
+                                                value: message.meta?.staff_qualifications?.length
+                                                    ? message.meta.staff_qualifications.join(', ')
+                                                    : null,
+                                            },
+                                            { label: 'Stamm', value: message.meta?.primary_staff_name },
+                                            { label: 'Vertretung', value: message.meta?.backup_staff_name },
+                                            {
+                                                label: 'Frist',
+                                                value: deadlinePhaseLabel(message.meta?.deadline_phase),
+                                            },
+                                            {
+                                                label: 'Fällig',
+                                                value: message.meta?.next_due_at,
+                                            },
+                                        ]}
+                                    />
+                                    <p className="mt-2 text-xs text-muted-foreground">
                                         {new Date(message.created_at).toLocaleString('de-DE')}
                                     </p>
                                 </button>
@@ -445,6 +547,50 @@ export default function Index({
                                             </ul>
                                         </div>
                                     )}
+                                    {inspector.due_jobs?.length > 0 && (
+                                        <div>
+                                            <p className="font-medium">Fällige Aufträge</p>
+                                            <ul className="mt-2 space-y-2">
+                                                {inspector.due_jobs.map((job, index) => (
+                                                    <li
+                                                        key={`${job.customer_name}-${job.service}-${index}`}
+                                                        className="rounded-md border px-2 py-1.5"
+                                                    >
+                                                        <MetaRows
+                                                            rows={[
+                                                                { label: 'Name', value: job.customer_name },
+                                                                {
+                                                                    label: 'PLZ',
+                                                                    value: `${job.postal_code}${
+                                                                        job.city ? ` ${job.city}` : ''
+                                                                    }`,
+                                                                },
+                                                                { label: 'Service', value: job.service },
+                                                                {
+                                                                    label: 'Dauer',
+                                                                    value: `${job.duration_minutes} Min.`,
+                                                                },
+                                                                { label: 'Fällig', value: job.next_due_at },
+                                                                {
+                                                                    label: 'Fenster',
+                                                                    value: `${job.completion_window_days} Tage`,
+                                                                },
+                                                                {
+                                                                    label: 'Frist',
+                                                                    value: job.deadline_phase_label,
+                                                                },
+                                                                { label: 'Stamm', value: job.primary_staff },
+                                                                {
+                                                                    label: 'Vertretung',
+                                                                    value: job.backup_staff,
+                                                                },
+                                                            ]}
+                                                        />
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                     {inspector.staff.length > 0 && (
                                         <div>
                                             <p className="font-medium">Mitarbeiter-Kalender</p>
@@ -452,28 +598,44 @@ export default function Index({
                                                 {inspector.staff.map((member) => (
                                                     <li
                                                         key={member.id}
-                                                        className="flex items-center justify-between gap-2 rounded-md border px-2 py-1.5"
+                                                        className="rounded-md border px-2 py-1.5"
                                                     >
-                                                        <span>
-                                                            {member.name}
-                                                            {member.services.length > 0 && (
-                                                                <span className="text-muted-foreground">
-                                                                    {' '}
-                                                                    · {member.services.join(', ')}
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                        <a
-                                                            href={route(
-                                                                'admin.scheduling-lab.staff-calendar',
-                                                                member.id,
-                                                            )}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="shrink-0 text-sm font-medium text-primary underline"
-                                                        >
-                                                            Kalender
-                                                        </a>
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <MetaRows
+                                                                rows={[
+                                                                    { label: 'Name', value: member.name },
+                                                                    {
+                                                                        label: 'Quali',
+                                                                        value: member.services.length
+                                                                            ? member.services.join(', ')
+                                                                            : null,
+                                                                    },
+                                                                    {
+                                                                        label: 'Zeiten',
+                                                                        value: member.availability_label,
+                                                                    },
+                                                                    {
+                                                                        label: 'Stammkunden',
+                                                                        value: member.stamm_customers.length
+                                                                            ? member.stamm_customers
+                                                                                  .map((c) => c.name)
+                                                                                  .join(', ')
+                                                                            : '—',
+                                                                    },
+                                                                ]}
+                                                            />
+                                                            <a
+                                                                href={route(
+                                                                    'admin.scheduling-lab.staff-calendar',
+                                                                    member.id,
+                                                                )}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="shrink-0 text-sm font-medium text-primary underline"
+                                                            >
+                                                                Kalender
+                                                            </a>
+                                                        </div>
                                                     </li>
                                                 ))}
                                             </ul>
@@ -484,7 +646,22 @@ export default function Index({
 
                             {run?.validation_results?.map((result) => (
                                 <div key={result.proposal_id} className="rounded-md border p-3">
-                                    <p className="font-medium">{result.customer}</p>
+                                    <MetaRows
+                                        rows={[
+                                            { label: 'Name', value: result.customer },
+                                            { label: 'PLZ', value: result.postal_code },
+                                            { label: 'Service', value: result.service },
+                                            { label: 'Techniker', value: result.staff },
+                                            {
+                                                label: 'Quali',
+                                                value: result.staff_qualifications?.length
+                                                    ? result.staff_qualifications.join(', ')
+                                                    : null,
+                                            },
+                                            { label: 'Stamm', value: result.primary_staff },
+                                            { label: 'Vertretung', value: result.backup_staff },
+                                        ]}
+                                    />
                                     <ul className="mt-2 space-y-1">
                                         {result.checks.map((check) => (
                                             <li

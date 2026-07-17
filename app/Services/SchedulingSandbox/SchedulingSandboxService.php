@@ -9,6 +9,7 @@ use App\Enums\SchedulingSandboxScenario;
 use App\Enums\StaffCustomerBinding;
 use App\Models\AppointmentProposal;
 use App\Models\Company;
+use App\Models\Customer;
 use App\Models\SchedulingSandboxRun;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -138,13 +139,24 @@ class SchedulingSandboxService
 
             $proposals = AppointmentProposal::query()
                 ->whereHas('appointment', fn ($q) => $q->where('company_id', $company->id))
-                ->with(['appointment.customer', 'appointment.serviceType', 'staffMember'])
+                ->with([
+                    'appointment.customer.primaryStaffMember:id,name',
+                    'appointment.customer.backupStaffMember:id,name',
+                    'appointment.serviceType',
+                    'staffMember.serviceTypes:id,name',
+                ])
                 ->latest()
                 ->get();
 
             $validationResults = $proposals->map(fn (AppointmentProposal $p) => [
                 'proposal_id' => $p->id,
                 'customer' => $p->appointment->customer->name,
+                'postal_code' => $p->appointment->customer->postal_code,
+                'service' => $p->appointment->serviceType->name,
+                'staff' => $p->staffMember?->name,
+                'staff_qualifications' => $p->staffMember?->serviceTypes->pluck('name')->values()->all() ?? [],
+                'primary_staff' => $p->appointment->customer->primaryStaffMember?->name,
+                'backup_staff' => $p->appointment->customer->backupStaffMember?->name,
                 'checks' => $this->validator->validateProposals($p, $run->scenario),
             ])->values()->all();
 
@@ -234,12 +246,102 @@ class SchedulingSandboxService
                 'confirmed_appointments' => $company->appointments()->where('status', 'confirmed')->count(),
             ],
             'clusters' => $clusters,
-            'staff' => $company->staffMembers()->with('serviceTypes:id,name')->get()->map(fn ($s) => [
-                'id' => $s->id,
-                'name' => $s->name,
-                'services' => $s->serviceTypes->pluck('name'),
-            ]),
+            'staff' => $this->inspectorStaff($company),
+            'due_jobs' => $this->inspectorDueJobs($company),
             'customers' => $company->customers()->orderBy('postal_code')->limit(20)->get(['id', 'name', 'postal_code', 'email']),
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function inspectorDueJobs(Company $company): array
+    {
+        return $company->recurringServices()
+            ->where('next_due_at', '<=', now())
+            ->where('is_active', true)
+            ->with([
+                'customer.primaryStaffMember:id,name',
+                'customer.backupStaffMember:id,name',
+                'serviceType',
+            ])
+            ->orderBy('next_due_at')
+            ->get()
+            ->map(function ($recurring) {
+                $window = (int) ($recurring->serviceType->completion_window_days
+                    ?? config('scheduling.default_completion_window_days', 14));
+                $phase = app(\App\Services\StaffLoadBalancerService::class)
+                    ->deadlinePhase($recurring->next_due_at, $window);
+
+                return [
+                    'customer_name' => $recurring->customer->name,
+                    'postal_code' => $recurring->customer->postal_code,
+                    'city' => $recurring->customer->city,
+                    'service' => $recurring->serviceType->name,
+                    'duration_minutes' => $recurring->serviceType->duration_minutes,
+                    'next_due_at' => $recurring->next_due_at->toDateString(),
+                    'completion_window_days' => $window,
+                    'deadline_phase' => $phase->value,
+                    'deadline_phase_label' => $phase->label(),
+                    'primary_staff' => $recurring->customer->primaryStaffMember?->name,
+                    'backup_staff' => $recurring->customer->backupStaffMember?->name,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{id: int, name: string, services: list<string>, availability_label: string|null, stamm_customers: list<array{id: int, name: string}>}>
+     */
+    private function inspectorStaff(Company $company): array
+    {
+        $stammByStaff = Customer::query()
+            ->where('company_id', $company->id)
+            ->whereNotNull('primary_staff_member_id')
+            ->orderBy('name')
+            ->get(['id', 'name', 'primary_staff_member_id'])
+            ->groupBy('primary_staff_member_id');
+
+        $dayLabels = [1 => 'Mo', 2 => 'Di', 3 => 'Mi', 4 => 'Do', 5 => 'Fr', 6 => 'Sa', 0 => 'So'];
+
+        return $company->staffMembers()
+            ->with(['serviceTypes:id,name', 'availabilities'])
+            ->orderBy('name')
+            ->get()
+            ->map(function ($staff) use ($stammByStaff, $dayLabels) {
+                $stammCustomers = ($stammByStaff->get($staff->id) ?? collect())
+                    ->map(fn (Customer $customer) => [
+                        'id' => $customer->id,
+                        'name' => $customer->name,
+                    ])
+                    ->values()
+                    ->all();
+
+                $availabilityLabel = null;
+                if ($staff->availabilities->isNotEmpty()) {
+                    $days = $staff->availabilities
+                        ->pluck('day_of_week')
+                        ->unique()
+                        ->sort()
+                        ->map(fn ($day) => $dayLabels[(int) $day] ?? (string) $day)
+                        ->values()
+                        ->all();
+                    $first = $staff->availabilities->first();
+                    $start = substr((string) $first->start_time, 0, 5);
+                    $end = substr((string) $first->end_time, 0, 5);
+                    $availabilityLabel = implode(', ', $days).' · '.$start.'–'.$end;
+                }
+
+                return [
+                    'id' => $staff->id,
+                    'name' => $staff->name,
+                    'services' => $staff->serviceTypes->pluck('name')->values()->all(),
+                    'availability_label' => $availabilityLabel,
+                    'stamm_customers' => $stammCustomers,
+                ];
+            })
+            ->values()
+            ->all();
     }
 }
