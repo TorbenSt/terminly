@@ -13,6 +13,7 @@ use App\Models\SchedulingSandboxRun;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 class SchedulingSandboxService
@@ -107,7 +108,18 @@ class SchedulingSandboxService
 
     public function runScheduling(SchedulingSandboxRun $run): SchedulingSandboxRun
     {
-        $run->update(['status' => SchedulingSandboxRunStatus::Running]);
+        $claimed = SchedulingSandboxRun::query()
+            ->whereKey($run->id)
+            ->where('status', SchedulingSandboxRunStatus::Ready)
+            ->update(['status' => SchedulingSandboxRunStatus::Running]);
+
+        if ($claimed === 0) {
+            throw new RuntimeException(
+                'KI-Planung wurde bereits gestartet oder abgeschlossen. Bitte Sandbox zurücksetzen oder ein neues Szenario wählen.',
+            );
+        }
+
+        $run->refresh();
         SandboxContext::set($run);
 
         try {

@@ -32,7 +32,7 @@ enum SchedulingSandboxScenario: string
             self::RegionalTwoStaff => '2 Techniker in verschiedenen PLZ-Regionen, 4 fällige Kunden.',
             self::RegionalTour => 'Bestehende PLZ-Tour (Berlin/Hamburg), neuer Kunde in gleicher Region.',
             self::StaffQualification => '2 Mitarbeiter mit unterschiedlichen Qualifikationen.',
-            self::PreferredStaffBinding => 'Strikt mit Ausnahmen: Stamm bei grüner Frist, freier Techniker bei roter Frist.',
+            self::PreferredStaffBinding => 'Strikt mit Ausnahmen: 2 fällige Kunden (grün → Stamm, rot → freier Techniker) → 2 Vorschlags-Mails.',
             self::GrokFallback => 'Wie „Einfach“, erzwingt den deterministischen Fallback-Scheduler.',
             self::RealLifeCapacity => '5 Mitarbeiter (nur 2 qualifiziert), 6+ PLZ-Cluster, Kalender ~65 % voll über 4 Monate – Stress-Test für reale Terminfindung.',
         };

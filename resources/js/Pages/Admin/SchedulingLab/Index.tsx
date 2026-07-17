@@ -79,7 +79,35 @@ export default function Index({
     const [mode, setMode] = useState<'scenario' | 'company'>('scenario');
     const [selectedMessage, setSelectedMessage] = useState<SandboxMessage | null>(run?.messages[0] ?? null);
     const [customerPreviewUrl, setCustomerPreviewUrl] = useState<string | null>(null);
+    const [runProcessing, setRunProcessing] = useState(false);
     const emailBodyRef = useRef<HTMLDivElement>(null);
+
+    const canStartPlanning = Boolean(enabled && run?.status === 'ready' && !runProcessing);
+
+    const startPlanning = () => {
+        if (!canStartPlanning) {
+            return;
+        }
+
+        setRunProcessing(true);
+        router.post(route('admin.scheduling-lab.run'), {}, {
+            preserveScroll: true,
+            onFinish: () => setRunProcessing(false),
+        });
+    };
+
+    const planningButtonLabel = (() => {
+        if (runProcessing || run?.status === 'running') {
+            return 'Planung läuft…';
+        }
+        if (run?.status === 'completed') {
+            return 'Planung abgeschlossen';
+        }
+        if (run?.status === 'failed') {
+            return 'Planung fehlgeschlagen';
+        }
+        return 'KI-Planung starten';
+    })();
 
     const closeCustomerView = useCallback(() => {
         setCustomerPreviewUrl(null);
@@ -313,11 +341,17 @@ export default function Index({
                             {run && (
                                 <div className="flex flex-col gap-2 border-t pt-4">
                                     <Button
-                                        onClick={() => router.post(route('admin.scheduling-lab.run'))}
-                                        disabled={!enabled || run.status === 'running'}
+                                        onClick={startPlanning}
+                                        disabled={!canStartPlanning}
                                     >
-                                        KI-Planung starten
+                                        {planningButtonLabel}
                                     </Button>
+                                    {run.status === 'completed' && (
+                                        <p className="text-xs text-muted-foreground">
+                                            Für einen erneuten Lauf Sandbox zurücksetzen oder ein neues Szenario
+                                            wählen.
+                                        </p>
+                                    )}
                                     <Button
                                         variant="outline"
                                         onClick={() => router.post(route('admin.scheduling-lab.reset'))}

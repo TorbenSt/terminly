@@ -415,4 +415,32 @@ class SchedulingSandboxTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_scheduling_cannot_be_started_twice_on_same_run(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::SimpleMaintenance, false);
+        $run = $service->activeRunFor($user);
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $messageCount = $run->messages()->count();
+        $this->assertGreaterThan(0, $messageCount);
+        $this->assertEquals(SchedulingSandboxRunStatus::Completed, $run->status);
+
+        $this->actingAs($user)
+            ->post(route('admin.scheduling-lab.run'))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $run->refresh();
+        $this->assertSame($messageCount, $run->messages()->count());
+        $this->assertEquals(SchedulingSandboxRunStatus::Completed, $run->status);
+
+        Carbon::setTestNow();
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\SchedulingSandboxRunStatus;
 use App\Enums\SchedulingSandboxScenario;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
@@ -10,6 +11,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class SchedulingLabController extends Controller
 {
@@ -85,7 +87,18 @@ class SchedulingLabController extends Controller
             return back()->with('error', 'Bitte zuerst ein Szenario oder einen Snapshot aufsetzen.');
         }
 
-        $this->sandbox->runScheduling($run);
+        if ($run->status !== SchedulingSandboxRunStatus::Ready) {
+            return back()->with(
+                'error',
+                'KI-Planung wurde bereits gestartet oder abgeschlossen. Bitte Sandbox zurücksetzen oder ein neues Szenario wählen.',
+            );
+        }
+
+        try {
+            $this->sandbox->runScheduling($run);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with('success', 'KI-Planung abgeschlossen. Prüfen Sie den Test-Posteingang.');
     }
