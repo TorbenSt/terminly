@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AppointmentStatus;
 use App\Enums\SchedulingSandboxRunStatus;
 use App\Enums\SchedulingSandboxScenario;
+use App\Models\Appointment;
 use App\Models\AppointmentProposal;
 use App\Models\Company;
+use App\Models\Customer;
 use App\Models\User;
 use App\Services\SchedulingSandbox\SchedulingSandboxService;
 use Carbon\Carbon;
@@ -250,6 +253,101 @@ class SchedulingSandboxTest extends TestCase
 
             $this->assertTrue($check['passed'], $check['detail'] ?? $check['key']);
         }
+
+        Carbon::setTestNow();
+    }
+
+    public function test_lab_scheduling_spreads_proposals_across_qualified_staff(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::RegionalTwoStaff, false);
+        $run = $service->activeRunFor($user);
+
+        $this->assertSame(2, $run->company->staffMembers()->count());
+        $this->assertSame(4, $run->company->recurringServices()->where('next_due_at', '<=', now())->count());
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $this->assertEquals(SchedulingSandboxRunStatus::Completed, $run->status);
+
+        $proposals = AppointmentProposal::query()
+            ->whereHas('appointment', fn ($q) => $q->where('company_id', $run->company_id))
+            ->get();
+
+        $this->assertGreaterThanOrEqual(4, $proposals->count());
+
+        $staffIds = $proposals->pluck('staff_member_id')->filter()->unique()->values();
+        $this->assertGreaterThanOrEqual(
+            2,
+            $staffIds->count(),
+            'Four due jobs should be load-balanced across both qualified technicians',
+        );
+
+        $counts = $proposals->groupBy('staff_member_id')->map->count();
+        $this->assertLessThanOrEqual(
+            3,
+            $counts->max(),
+            'No single technician should receive almost all proposals in an even starting load',
+        );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_lab_scheduling_prefers_less_loaded_qualified_staff(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-14 10:00:00', 'UTC'));
+
+        $user = $this->createSuperAdmin();
+        $service = app(SchedulingSandboxService::class);
+        $service->setupScenario($user, SchedulingSandboxScenario::RegionalTwoStaff, false);
+        $run = $service->activeRunFor($user);
+        $company = $run->company;
+
+        $staff = $company->staffMembers()->orderBy('id')->get();
+        $this->assertCount(2, $staff);
+        $busy = $staff[0];
+        $free = $staff[1];
+
+        $serviceType = $company->serviceTypes()->where('name', 'Wartung')->firstOrFail();
+
+        for ($i = 0; $i < 8; $i++) {
+            $customer = Customer::factory()->create([
+                'company_id' => $company->id,
+                'postal_code' => '30159',
+            ]);
+            Appointment::create([
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'service_type_id' => $serviceType->id,
+                'staff_member_id' => $busy->id,
+                'status' => AppointmentStatus::Confirmed,
+                'scheduled_at' => now()->addDays(2 + $i)->setTime(9, 0),
+                'duration_minutes' => 45,
+                'travel_time_minutes' => 15,
+            ]);
+        }
+
+        $service->runScheduling($run);
+        $run->refresh();
+
+        $proposals = AppointmentProposal::query()
+            ->whereHas('appointment', fn ($q) => $q->where('company_id', $company->id))
+            ->get();
+
+        $this->assertNotEmpty($proposals);
+
+        $freeCount = $proposals->where('staff_member_id', $free->id)->count();
+        $busyCount = $proposals->where('staff_member_id', $busy->id)->count();
+
+        $this->assertGreaterThan(
+            $busyCount,
+            $freeCount,
+            "Less-loaded technician ({$free->name}) should receive more new proposals than busy ({$busy->name})",
+        );
 
         Carbon::setTestNow();
     }

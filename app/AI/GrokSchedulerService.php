@@ -14,6 +14,7 @@ use App\Services\ClusteringService;
 use App\Services\RegionalRoutingService;
 use App\Services\SchedulingSandbox\SandboxContext;
 use App\Services\SlotCuratorService;
+use App\Services\StaffLoadBalancerService;
 use Carbon\Carbon;
 use GrokPHP\Client\Config\ChatOptions;
 use GrokPHP\Client\Exceptions\GrokException;
@@ -28,6 +29,7 @@ class GrokSchedulerService
         private readonly AvailabilityService $availabilityService,
         private readonly SlotCuratorService $slotCurator,
         private readonly RegionalRoutingService $regionalRouting,
+        private readonly StaffLoadBalancerService $loadBalancer,
     ) {}
 
     /**
@@ -38,7 +40,7 @@ class GrokSchedulerService
         $context = $this->buildContext($company, $negotiationAppointment);
 
         if (empty(config('grok.api_key')) || SandboxContext::shouldForceFallback($company)) {
-            $assignments = $this->fallbackSchedule($context);
+            $assignments = $this->fallbackSchedule($context, $negotiationAppointment);
         } else {
             try {
                 $response = GrokAI::chat(
@@ -55,12 +57,15 @@ class GrokSchedulerService
             } catch (GrokException|\JsonException $e) {
                 Log::warning('Grok scheduling failed, using fallback', ['error' => $e->getMessage()]);
 
-                $assignments = $this->fallbackSchedule($context);
+                $assignments = $this->fallbackSchedule($context, $negotiationAppointment);
             }
         }
 
         return $this->applyNegotiationCuration(
-            $this->applyRegionalRouting($assignments, $context),
+            $this->applyRegionalRouting(
+                $this->applyLoadBalancing($assignments, $context, $negotiationAppointment),
+                $context,
+            ),
             $context,
         );
     }
@@ -91,7 +96,7 @@ class GrokSchedulerService
             ->where('is_active', true)
             ->with(['serviceTypes:id', 'availabilities'])
             ->get()
-            ->map(function (StaffMember $staff) {
+            ->map(function (StaffMember $staff) use ($company) {
                 $from = $this->availabilityService->earliestBookableDate();
                 $to = now()->addDays((int) config('scheduling.ai_slot_horizon_days', 28))->endOfDay();
 
@@ -99,6 +104,7 @@ class GrokSchedulerService
                     'staff_id' => $staff->id,
                     'qualified_service_type_ids' => $staff->serviceTypes->pluck('id')->values(),
                     'buffer_min' => $staff->buffer_minutes,
+                    'upcoming_workload' => $this->loadBalancer->upcomingWorkload($staff->id, $company->id),
                     'weekly_availability' => $staff->availabilities->map(fn ($a) => array_filter([
                         'dow' => $a->day_of_week,
                         'start' => substr((string) $a->start_time, 0, 5),
@@ -142,10 +148,13 @@ class GrokSchedulerService
      *
      * @return Collection<int, array<string, mixed>>
      */
-    private function fallbackSchedule(SchedulingContext $context): Collection
-    {
+    private function fallbackSchedule(
+        SchedulingContext $context,
+        ?Appointment $negotiationAppointment = null,
+    ): Collection {
         $assignments = collect();
         $feedbackByCustomer = $context->negotiationFeedback->keyBy('customer_id');
+        $batchAssignments = [];
 
         foreach ($context->clusters as $cluster) {
             $jobs = collect($cluster['jobs'] ?? []);
@@ -161,14 +170,32 @@ class GrokSchedulerService
             }
 
             foreach ($jobs as $job) {
-                $staff = $this->pickQualifiedStaff($context->staff, $job['service_type_id'] ?? null);
+                $customerId = $job['customer_id'];
+                $postalCode = $job['postal_code'] ?? null;
 
-                if (! $staff) {
-                    continue;
+                if (
+                    $negotiationAppointment
+                    && $negotiationAppointment->customer_id === $customerId
+                    && $negotiationAppointment->staff_member_id
+                ) {
+                    $staffId = $negotiationAppointment->staff_member_id;
+                    $batchAssignments[$staffId] = ((int) ($batchAssignments[$staffId] ?? 0)) + 1;
+                } else {
+                    $staff = $this->loadBalancer->pickQualifiedStaff(
+                        $context->staff,
+                        $job['service_type_id'] ?? null,
+                        $context->companyId,
+                        $postalCode,
+                        $batchAssignments,
+                    );
+
+                    if (! $staff) {
+                        continue;
+                    }
+
+                    $staffId = $staff['staff_id'];
                 }
 
-                $staffId = $staff['staff_id'];
-                $customerId = $job['customer_id'];
                 $feedback = $feedbackByCustomer->get($customerId);
                 $durationMinutes = $job['duration_min'] ?? 60;
 
@@ -177,13 +204,12 @@ class GrokSchedulerService
                         $staffId,
                         $feedback['feedback'],
                         $durationMinutes,
-                        $job['postal_code'] ?? null,
+                        $postalCode,
                     );
                     $slots = $curated['slots'];
                     $recommendedOption = $curated['recommended_option'];
                 } else {
                     $staffMember = StaffMember::find($staffId);
-                    $postalCode = $job['postal_code'] ?? null;
 
                     if ($staffMember && $postalCode) {
                         $slots = $this->regionalRouting->buildRegionalSlots(
@@ -207,6 +233,7 @@ class GrokSchedulerService
                     'recurring_id' => $job['recurring_id'],
                     'customer_id' => $customerId,
                     'staff_id' => $staffId,
+                    'service_type_id' => $job['service_type_id'] ?? null,
                     'suggested_date' => Carbon::parse($slots[0])->toDateString(),
                     'slots' => $slots,
                     'recommended_option' => $recommendedOption,
@@ -218,26 +245,35 @@ class GrokSchedulerService
     }
 
     /**
-     * @param  Collection<int, array<string, mixed>|Collection<string, mixed>>  $staffPool
-     * @return array<string, mixed>|null
+     * @param  Collection<int, array<string, mixed>>  $assignments
+     * @return Collection<int, array<string, mixed>>
      */
-    private function pickQualifiedStaff(Collection $staffPool, mixed $serviceTypeId): ?array
-    {
-        $normalized = $staffPool
-            ->map(fn ($staff) => $staff instanceof Collection ? $staff->all() : (array) $staff)
-            ->values();
-
-        if ($serviceTypeId === null) {
-            return $normalized->first();
+    private function applyLoadBalancing(
+        Collection $assignments,
+        SchedulingContext $context,
+        ?Appointment $negotiationAppointment = null,
+    ): Collection {
+        if ($assignments->isEmpty()) {
+            return $assignments;
         }
 
-        $serviceTypeId = (int) $serviceTypeId;
+        // Keep the same technician during an active negotiation round.
+        if ($negotiationAppointment?->staff_member_id) {
+            return $assignments->map(function (array $assignment) use ($negotiationAppointment) {
+                if (($assignment['customer_id'] ?? null) === $negotiationAppointment->customer_id) {
+                    $assignment['staff_id'] = $negotiationAppointment->staff_member_id;
+                }
 
-        return $normalized->first(function (array $staff) use ($serviceTypeId) {
-            $ids = collect($staff['qualified_service_type_ids'] ?? [])->map(fn ($id) => (int) $id);
+                return $assignment;
+            })->values();
+        }
 
-            return $ids->contains($serviceTypeId);
-        }) ?? $normalized->first();
+        return $this->loadBalancer->rebalanceAssignments(
+            $assignments,
+            $context->staff,
+            $context->companyId,
+            $this->postalCodesByCustomer($context),
+        );
     }
 
     /**

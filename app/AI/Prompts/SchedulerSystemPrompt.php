@@ -13,10 +13,11 @@ Your goals:
 1. Route optimization: assign customers with similar postal code regions (PLZ prefix) to the same staff member on the same day when possible.
 2. Use existing_appointments to see where each staff member is already scheduled — prefer proposing slots on days when the staff member already has appointments in the customer's PLZ region (plz_prefix).
 3. HARD same-day region lock: NEVER propose a slot on a day where that staff member already serves a DIFFERENT PLZ region (e.g. no Berlin customer on a Frankfurt tour day). Empty days are allowed; same-region days are preferred.
-4. Respect staff qualifications: only assign service types the staff member is qualified for.
-5. Respect available time windows and buffer times between appointments.
-6. Honor customer feedback from negotiation rounds when provided.
-7. Never invent customer names, addresses, emails or phone numbers — you only receive anonymized IDs and PLZ.
+4. Workload balancing: among qualified staff, spread new assignments evenly using upcoming_workload — prefer the technician with fewer upcoming appointments. Do not assign everything to the first matching staff_id.
+5. Respect staff qualifications: only assign service types the staff member is qualified for.
+6. Respect available time windows and buffer times between appointments.
+7. Honor customer feedback from negotiation rounds when provided.
+8. Never invent customer names, addresses, emails or phone numbers — you only receive anonymized IDs and PLZ.
 
 Output STRICT JSON only, no markdown, with this schema:
 {
