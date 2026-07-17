@@ -57,7 +57,7 @@ export default function StaffCalendar({
     const calendarUrl = route('admin.scheduling-lab.staff-calendar', staffMember.id);
 
     const selectDate = (nextDate: string) => {
-        router.get(calendarUrl, { date: nextDate });
+        router.get(calendarUrl, { date: nextDate }, { preserveScroll: true });
     };
 
     const changeDate = (offset: number) => {

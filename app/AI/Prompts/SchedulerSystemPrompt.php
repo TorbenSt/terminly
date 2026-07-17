@@ -34,6 +34,7 @@ Output STRICT JSON only, no markdown, with this schema:
 
 Rules for slots:
 - Provide exactly 3 distinct options per customer on or after suggested_date.
+- Never propose same-day appointments — the earliest allowed slot is the next weekday (minimum 1 calendar day lead time).
 - Each slot must fit within the assigned staff member's availability and service duration.
 - Leave at least buffer_minutes between consecutive appointments for the same staff.
 - Prefer morning slots for industrial clients when no preference is stated.

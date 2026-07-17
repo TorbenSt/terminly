@@ -12,6 +12,27 @@ use Illuminate\Support\Collection;
 class AvailabilityService
 {
     /**
+     * Earliest date on which appointments may be offered to customers.
+     * Best practice: never same-day; skip to the next weekday for field service.
+     */
+    public function earliestBookableDate(?Carbon $after = null): Carbon
+    {
+        $leadDays = max(1, (int) config('scheduling.min_lead_days', 1));
+        $cursor = ($after ?? now())->copy()->startOfDay()->addDays($leadDays);
+
+        while (! $cursor->isWeekday()) {
+            $cursor->addDay();
+        }
+
+        return $cursor;
+    }
+
+    public function isBookableDate(Carbon $date): bool
+    {
+        return $date->copy()->startOfDay()->gte($this->earliestBookableDate());
+    }
+
+    /**
      * @return Collection<int, TimeSlot>
      */
     public function getAvailableSlots(StaffMember $staff, Carbon $date, int $durationMinutes): Collection
@@ -41,6 +62,20 @@ class AvailabilityService
         }
 
         return $slots;
+    }
+
+    /**
+     * Bookable slots only — excludes same-day (and any day before the lead time).
+     *
+     * @return Collection<int, TimeSlot>
+     */
+    public function getBookableSlots(StaffMember $staff, Carbon $date, int $durationMinutes): Collection
+    {
+        if (! $this->isBookableDate($date)) {
+            return collect();
+        }
+
+        return $this->getAvailableSlots($staff, $date, $durationMinutes);
     }
 
     /**
@@ -139,9 +174,14 @@ class AvailabilityService
     {
         $slots = collect();
         $cursor = $from->copy()->startOfDay();
+        $earliest = $this->earliestBookableDate();
+
+        if ($cursor->lt($earliest)) {
+            $cursor = $earliest->copy();
+        }
 
         while ($cursor->lte($to)) {
-            $this->getAvailableSlots($staff, $cursor, $durationMinutes)
+            $this->getBookableSlots($staff, $cursor, $durationMinutes)
                 ->take(12)
                 ->each(fn (TimeSlot $slot) => $slots->push($slot->toArray()));
 

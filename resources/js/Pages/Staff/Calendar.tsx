@@ -27,7 +27,7 @@ interface Props {
 
 export default function Calendar({ date, appointmentDates, staffMember, slots, appointments }: Props) {
     const selectDate = (nextDate: string) => {
-        router.get(route('staff.calendar'), { date: nextDate });
+        router.get(route('staff.calendar'), { date: nextDate }, { preserveScroll: true });
     };
 
     const changeDate = (offset: number) => {

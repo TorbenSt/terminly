@@ -376,6 +376,10 @@ class SlotCuratorService
 
     private function matchesConstraints(Carbon $time, array $preferences): bool
     {
+        if (! $this->availabilityService->isBookableDate($time)) {
+            return false;
+        }
+
         if ($preferences['earliest_date'] !== null && $time->lt($preferences['earliest_date'])) {
             return false;
         }
@@ -464,6 +468,10 @@ class SlotCuratorService
 
         foreach ($tiers as $tier => $dates) {
             foreach ($dates as $date) {
+                if (! $this->availabilityService->isBookableDate($date)) {
+                    continue;
+                }
+
                 if ($preferences['earliest_date'] !== null && $date->lt($preferences['earliest_date'])) {
                     continue;
                 }
@@ -481,7 +489,7 @@ class SlotCuratorService
                 }
 
                 $slots = $this->filterByTimeOfDay(
-                    $this->availabilityService->getAvailableSlots($staff, $date, $durationMinutes),
+                    $this->availabilityService->getBookableSlots($staff, $date, $durationMinutes),
                     $preferences,
                 );
 
@@ -521,6 +529,11 @@ class SlotCuratorService
         $limit = (int) config('scheduling.candidate_search_weekdays', 90);
         $dates = [];
         $cursor = ($preferences['earliest_date'] ?? $preferredDate)->copy()->startOfDay();
+        $earliestBookable = $this->availabilityService->earliestBookableDate();
+
+        if ($cursor->lt($earliestBookable)) {
+            $cursor = $earliestBookable->copy();
+        }
 
         if ($cursor->lt(now()->startOfDay())) {
             $cursor = now()->startOfDay();
@@ -987,6 +1000,8 @@ class SlotCuratorService
      */
     private function resolvePreferredDate(array $preferences): Carbon
     {
+        $earliestBookable = $this->availabilityService->earliestBookableDate();
+
         if ($preferences['earliest_date'] !== null && $preferences['latest_date'] !== null) {
             $target = $preferences['latest_date']->copy()->startOfDay();
 
@@ -1002,11 +1017,11 @@ class SlotCuratorService
                 }
             }
 
-            return $target->startOfDay();
+            return $target->max($earliestBookable)->startOfDay();
         }
 
         if ($preferences['earliest_date'] !== null) {
-            $target = $preferences['earliest_date']->copy()->startOfDay();
+            $target = $preferences['earliest_date']->copy()->startOfDay()->max($earliestBookable);
 
             while (! $this->matchesPreferredWeekday($target, $preferences) || ! $target->isWeekday()) {
                 $target->addDay();
@@ -1019,7 +1034,7 @@ class SlotCuratorService
             return $target->startOfDay();
         }
 
-        $target = now()->addWeeks($preferences['week_offset'])->startOfDay();
+        $target = now()->addWeeks($preferences['week_offset'])->startOfDay()->max($earliestBookable);
 
         while (! $this->matchesPreferredWeekday($target, $preferences) || ! $target->isWeekday()) {
             $target->addDay();
@@ -1043,6 +1058,11 @@ class SlotCuratorService
                 ?? ($preferences['time_of_day'] === 'afternoon' ? 14 : 9),
             0,
         );
+
+        $earliestBookable = $this->availabilityService->earliestBookableDate()->setTime($base->hour, 0);
+        if ($base->lt($earliestBookable)) {
+            $base = $earliestBookable->copy();
+        }
 
         if ($preferences['earliest_date'] !== null && $base->lt($preferences['earliest_date'])) {
             $base = $preferences['earliest_date']->copy()->setTime($base->hour, 0);

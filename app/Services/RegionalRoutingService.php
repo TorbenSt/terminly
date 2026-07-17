@@ -26,6 +26,11 @@ class RegionalRoutingService
     {
         $from = now()->startOfDay();
         $to = now()->addDays((int) config('scheduling.ai_appointment_horizon_days', 90))->endOfDay();
+        $earliest = $this->availability->earliestBookableDate();
+
+        if ($from->lt($earliest)) {
+            $from = $earliest->copy();
+        }
 
         return Appointment::query()
             ->where('company_id', $company->id)
@@ -100,8 +105,12 @@ class RegionalRoutingService
         ?Carbon $from = null,
         ?Carbon $to = null,
     ): Collection {
-        $from ??= now()->startOfDay();
+        $from ??= $this->availability->earliestBookableDate();
         $to ??= now()->addDays((int) config('scheduling.ai_appointment_horizon_days', 90))->endOfDay();
+
+        if ($from->lt($this->availability->earliestBookableDate())) {
+            $from = $this->availability->earliestBookableDate();
+        }
 
         $dates = collect();
         $cursor = $from->copy()->startOfDay();
@@ -157,7 +166,10 @@ class RegionalRoutingService
         ?Carbon $earliestDate = null,
     ): array {
         $regionKey = $this->regionKey($postalCode);
-        $from = $earliestDate?->copy()->startOfDay() ?? now()->startOfDay();
+        $from = $earliestDate?->copy()->startOfDay() ?? $this->availability->earliestBookableDate();
+        if ($from->lt($this->availability->earliestBookableDate())) {
+            $from = $this->availability->earliestBookableDate();
+        }
         $to = now()->addDays((int) config('scheduling.ai_appointment_horizon_days', 90))->endOfDay();
         $rankedDates = $this->rankDatesByRegion($staff, $regionKey, $from, $to);
 
@@ -258,7 +270,7 @@ class RegionalRoutingService
         Collection $selected,
         bool $force = false,
     ): void {
-        $available = $this->availability->getAvailableSlots($staff, $date, $durationMinutes);
+        $available = $this->availability->getBookableSlots($staff, $date, $durationMinutes);
 
         foreach ($available as $slot) {
             if ($selected->count() >= 3) {
@@ -321,7 +333,10 @@ class RegionalRoutingService
     ): array {
         $regionKey = $this->regionKey($postalCode);
         $selected = collect();
-        $cursor = ($earliestDate ?? now())->copy()->startOfDay();
+        $cursor = ($earliestDate ?? $this->availability->earliestBookableDate())->copy()->startOfDay();
+        if ($cursor->lt($this->availability->earliestBookableDate())) {
+            $cursor = $this->availability->earliestBookableDate();
+        }
         $limit = (int) config('scheduling.candidate_search_weekdays', 90);
         $scanned = 0;
 

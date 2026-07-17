@@ -91,8 +91,9 @@ class SchedulingSandboxValidator
             }
 
             $duration = $appointment->duration_minutes;
-            $available = $this->availability
-                ->getAvailableSlots($staff, Carbon::parse($slot), $duration)
+            $bookable = $this->availability->isBookableDate($slot);
+            $available = $bookable && $this->availability
+                ->getBookableSlots($staff, Carbon::parse($slot), $duration)
                 ->contains(fn ($availableSlot) => $availableSlot->start->copy()->startOfMinute()->equalTo(
                     Carbon::parse($slot)->startOfMinute()
                 ));
@@ -101,9 +102,11 @@ class SchedulingSandboxValidator
                 "slot_{$number}_availability",
                 "Option {$number}: Verfügbarkeit",
                 $available,
-                $available
-                    ? "Slot {$slot->format('d.m.Y H:i')} liegt in der Arbeitszeit."
-                    : "Slot {$slot->format('d.m.Y H:i')} liegt außerhalb der Verfügbarkeit oder kollidiert.",
+                ! $bookable
+                    ? "Slot {$slot->format('d.m.Y H:i')} liegt innerhalb der Mindestvorlaufzeit (kein Same-Day)."
+                    : ($available
+                        ? "Slot {$slot->format('d.m.Y H:i')} liegt in der Arbeitszeit."
+                        : "Slot {$slot->format('d.m.Y H:i')} liegt außerhalb der Verfügbarkeit oder kollidiert."),
             );
         }
 

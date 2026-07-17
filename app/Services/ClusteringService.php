@@ -12,6 +12,7 @@ class ClusteringService
 {
     public function __construct(
         private readonly int $regionDigits = 3,
+        private readonly ?AvailabilityService $availability = null,
     ) {}
 
     /**
@@ -62,10 +63,13 @@ class ClusteringService
     private function suggestClusterDate(Collection $services): string
     {
         $earliestDue = $services->min(fn (RecurringService $s) => $s->next_due_at);
+        $availability = $this->availability ?? app(AvailabilityService::class);
+        $after = $earliestDue
+            ? Carbon::parse($earliestDue)->max(now())->startOfDay()
+            : now()->startOfDay();
 
-        return $earliestDue
-            ? Carbon::parse($earliestDue)->max(now())->nextWeekday()->toDateString()
-            : now()->addWeekday()->toDateString();
+        // earliestBookableDate adds lead days from "after"; pass day before so due-today still gets tomorrow+.
+        return $availability->earliestBookableDate($after->copy()->subDay())->toDateString();
     }
 
     /**

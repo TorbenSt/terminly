@@ -92,8 +92,8 @@ class GrokSchedulerService
             ->with(['serviceTypes:id', 'availabilities'])
             ->get()
             ->map(function (StaffMember $staff) {
-                $from = now()->startOfDay();
-                $to = now()->addDays((int) config('scheduling.ai_slot_horizon_days', 90))->endOfDay();
+                $from = $this->availabilityService->earliestBookableDate();
+                $to = now()->addDays((int) config('scheduling.ai_slot_horizon_days', 28))->endOfDay();
 
                 return collect([
                     'staff_id' => $staff->id,
@@ -154,8 +154,11 @@ class GrokSchedulerService
                 continue;
             }
 
-            $suggestedDate = $cluster['suggested_date'] ?? now()->addWeekday()->toDateString();
+            $suggestedDate = $cluster['suggested_date'] ?? $this->availabilityService->earliestBookableDate()->toDateString();
             $base = Carbon::parse($suggestedDate)->setTime(9, 0);
+            if ($base->lt($this->availabilityService->earliestBookableDate())) {
+                $base = $this->availabilityService->earliestBookableDate()->setTime(9, 0);
+            }
 
             foreach ($jobs as $job) {
                 $staff = $this->pickQualifiedStaff($context->staff, $job['service_type_id'] ?? null);

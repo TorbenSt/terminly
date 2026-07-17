@@ -33,4 +33,8 @@ return [
     // Fallback/curator search when calendars are dense
     'candidate_search_weekdays' => (int) env('SCHEDULING_CANDIDATE_SEARCH_WEEKDAYS', 90),
 
+    // Minimum calendar days before an offered appointment (1 = not same-day).
+    // The effective date is then advanced to the next weekday.
+    'min_lead_days' => (int) env('SCHEDULING_MIN_LEAD_DAYS', 1),
+
 ];
